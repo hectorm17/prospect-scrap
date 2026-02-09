@@ -68,6 +68,8 @@ class DataGouvScraper:
         page = 1
         per_page = 25
         limit = filtres.get('limit', 100)
+        # Sur-fetcher pour compenser les pertes lors du filtrage CA
+        overfetch_limit = int(limit * config.OVERFETCH_MULTIPLIER)
 
         # Construction des paramètres
         params = {
@@ -99,7 +101,7 @@ class DataGouvScraper:
               f"région={filtres.get('region', 'toutes')}, "
               f"effectif={tranches}")
 
-        while len(all_companies) < limit:
+        while len(all_companies) < overfetch_limit:
             params['page'] = page
 
             try:
@@ -137,8 +139,8 @@ class DataGouvScraper:
                 print(f"❌ Erreur page {page}: {e}")
                 break
 
-        # Applique la limite
-        all_companies = all_companies[:limit]
+        # Applique la limite de sur-fetching
+        all_companies = all_companies[:overfetch_limit]
         print(f"✅ Total retenu: {len(all_companies)} entreprises\n")
         return all_companies
 
@@ -193,6 +195,7 @@ class DataGouvScraper:
                     'code_postal': siege.get('code_postal', ''),
                     'ville': siege.get('libelle_commune', ''),
                     'region': siege.get('region', ''),
+                    'adresse_complete': self._build_complete_address(siege),
 
                     # Dirigeant (si dispo dans l'API)
                     'dirigeant_principal': self._extract_dirigeant(company),
@@ -207,6 +210,20 @@ class DataGouvScraper:
                 continue
 
         return pd.DataFrame(data)
+
+    def _build_complete_address(self, siege: Dict) -> str:
+        """Construit l'adresse complète depuis les composants du siège"""
+        parts = []
+        if siege.get('adresse'):
+            parts.append(siege['adresse'])
+        cp_ville = []
+        if siege.get('code_postal'):
+            cp_ville.append(siege['code_postal'])
+        if siege.get('libelle_commune'):
+            cp_ville.append(siege['libelle_commune'])
+        if cp_ville:
+            parts.append(' '.join(cp_ville))
+        return ', '.join(parts) if parts else ''
 
     def _extract_dirigeant(self, company: Dict) -> str:
         """Extrait le nom du dirigeant principal"""

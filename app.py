@@ -254,7 +254,7 @@ def run_scraping_pipeline(ca_min, ca_max, region_code, secteur_code, forme_code,
             progress_bar.progress(30)
 
             enricher = SocieteEnricher()
-            df = enricher.enrich_dataframe(df, filter_ca=True)
+            df = enricher.enrich_dataframe(df, filter_ca=True, target_limit=limit)
             
             progress_bar.progress(55)
             st.success(f"✅ Données enrichies")
@@ -272,7 +272,7 @@ def run_scraping_pipeline(ca_min, ca_max, region_code, secteur_code, forme_code,
                 st.warning("⚠️ Clé API manquante : qualification IA sautée")
                 progress_bar.progress(100)
             else:
-                status_text.text("🤖 Étape 3/4 : Qualification IA avec Claude...")
+                status_text.text("🤖 Étape 3/4 : Qualification IA + Recherche web...")
                 progress_bar.progress(60)
                 
                 qualifier = ProspectQualifier(api_key)
@@ -314,8 +314,12 @@ def run_scraping_pipeline(ca_min, ca_max, region_code, secteur_code, forme_code,
                 
                 # Preview
                 st.subheader("📊 Aperçu des résultats")
+                preview_cols = ['score', 'score_label', 'nom_entreprise',
+                                'ca_m_euros', 'evolution_ca', 'ville',
+                                'signaux_ma', 'justification']
+                existing_preview = [c for c in preview_cols if c in df.columns]
                 st.dataframe(
-                    df[['score', 'nom_entreprise', 'ca_m_euros', 'ville', 'justification']].head(10),
+                    df[existing_preview].head(10),
                     use_container_width=True
                 )
         else:
@@ -375,8 +379,13 @@ def show_history():
                 )
             
             # Preview
+            preview_cols = ['score', 'nom_entreprise', 'ville',
+                            'signaux_ma', 'justification']
+            # Gère les anciens fichiers sans les nouvelles colonnes
+            score_col = 'score' if 'score' in df.columns else 'Score'
+            existing_preview = [c for c in preview_cols if c in df.columns]
             st.dataframe(
-                df[['score', 'nom_entreprise', 'ville', 'justification']].head(5),
+                df[existing_preview].head(5),
                 use_container_width=True
             )
 

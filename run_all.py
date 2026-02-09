@@ -72,8 +72,9 @@ def run_pipeline(custom_filtres=None):
     print("-" * 60)
     
     try:
+        original_limit = filtres.get('limit', 100)
         enricher = PappersEnricher()
-        df = enricher.enrich_dataframe(df)
+        df = enricher.enrich_dataframe(df, target_limit=original_limit)
         
         # Sauvegarde enrichie
         file_enriched = f"outputs/enriched_{timestamp}.xlsx"
@@ -104,7 +105,7 @@ def run_pipeline(custom_filtres=None):
     # ================================================
     # ÉTAPE 4 : QUALIFICATION IA
     # ================================================
-    print("\n📍 ÉTAPE 4/4 : Qualification IA")
+    print("\n📍 ÉTAPE 4/4 : Qualification IA + Recherche web")
     print("-" * 60)
     
     try:

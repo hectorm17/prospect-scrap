@@ -54,6 +54,7 @@ class SocieteEnricher:
 
             data = {
                 'ca_euros': self._extract_ca(soup),
+                'evolution_ca': self._extract_ca_evolution(soup),
                 'resultat_euros': self._extract_resultat(soup),
                 'effectif_societe': self._extract_effectif(soup),
                 'telephone': self._extract_telephone(soup),
@@ -109,6 +110,52 @@ class SocieteEnricher:
         except:
             return None
 
+    def _extract_ca_evolution(self, soup: BeautifulSoup) -> str:
+        """Extrait l'évolution du CA sur plusieurs années"""
+        try:
+            ca_values = {}
+            ca_label = soup.find('div', string="Chiffre d'affaires")
+            if ca_label:
+                parent = ca_label.find_parent()
+                if parent:
+                    for div in parent.find_all('div', attrs={'data-year': True}):
+                        year = div.get('data-year', '')
+                        span = div.find('span', class_='xDpNbr')
+                        if span:
+                            val = span.get_text(strip=True)
+                            val = re.sub(r'[^\d,.]', '', val).replace(',', '.')
+                            if val:
+                                try:
+                                    ca_values[year] = float(val)
+                                except ValueError:
+                                    pass
+
+            if len(ca_values) < 2:
+                return ""
+
+            sorted_years = sorted(ca_values.keys())
+            latest = ca_values[sorted_years[-1]]
+            earliest = ca_values[sorted_years[0]]
+
+            if earliest > 0:
+                growth_pct = ((latest - earliest) / earliest) * 100
+                years_span = len(sorted_years) - 1
+                if growth_pct > 10:
+                    trend = "Croissance"
+                elif growth_pct < -10:
+                    trend = "Décroissance"
+                else:
+                    trend = "Stable"
+
+                values_str = ', '.join(
+                    f"{y}: {ca_values[y]/1e6:.1f}M€" for y in sorted_years[-3:]
+                )
+                return f"{trend} ({growth_pct:+.0f}% sur {years_span}a) - {values_str}"
+
+            return ""
+        except Exception:
+            return ""
+
     def _extract_resultat(self, soup: BeautifulSoup) -> Optional[float]:
         """Extrait le résultat net"""
         try:
@@ -157,32 +204,79 @@ class SocieteEnricher:
             return ""
 
     def _extract_email(self, soup: BeautifulSoup) -> str:
-        """Extrait l'email - souvent non disponible sur societe.com"""
+        """Extrait l'email - essaie mailto puis regex dans le HTML"""
         try:
+            # Méthode 1: liens mailto
             email_link = soup.find('a', href=lambda x: x and 'mailto:' in str(x))
             if email_link:
-                return email_link['href'].replace('mailto:', '').split('?')[0]
+                email = email_link['href'].replace('mailto:', '').split('?')[0]
+                if '@' in email:
+                    return email
+
+            # Méthode 2: regex email dans le HTML
+            html_text = str(soup)
+            email_pattern = r'[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}'
+            matches = re.findall(email_pattern, html_text)
+            blocked = ['example.com', 'societe.com', 'placeholder', 'schema.org']
+            for match in matches:
+                if not any(d in match for d in blocked):
+                    return match
+
             return ""
-        except:
+        except Exception:
             return ""
 
     def _extract_website(self, soup: BeautifulSoup) -> str:
-        """Extrait le site web - souvent non disponible sur societe.com"""
-        # Societe.com n'affiche généralement pas les sites web des entreprises
-        return ""
+        """Extrait le site web depuis les liens externes de la page"""
+        try:
+            skip_domains = [
+                'societe.com', 'facebook.com', 'twitter.com', 'linkedin.com',
+                'instagram.com', 'youtube.com', 'google.com', 'pappers.fr',
+                'infogreffe.fr', 'bodacc.fr', 'data.gouv.fr',
+            ]
+            for link in soup.find_all('a', href=True):
+                href = link['href']
+                if not href.startswith('http'):
+                    continue
+                if any(d in href for d in skip_domains):
+                    continue
+                if 'mailto:' in href or '#' == href:
+                    continue
+                rel = link.get('rel', [])
+                if 'nofollow' in rel or 'external' in rel:
+                    return href
+
+            # Méthode 2: og:see_also meta
+            meta = soup.find('meta', {'property': 'og:see_also'})
+            if meta and meta.get('content', '').startswith('http'):
+                return meta['content']
+
+            return ""
+        except Exception:
+            return ""
 
     def _extract_dirigeant(self, soup: BeautifulSoup) -> str:
-        """Extrait le nom du dirigeant principal"""
+        """Extrait le dirigeant avec sa fonction"""
         try:
-            # Cherche dans la section dirigeants
             for elem in soup.find_all(['div', 'section']):
-                if 'Dirigeant' in elem.get_text():
-                    # Cherche le premier nom après
+                text = elem.get_text()
+                if 'Dirigeant' in text:
                     name_elem = elem.find_next('a')
                     if name_elem and '/dirigeant/' in str(name_elem.get('href', '')):
-                        return name_elem.get_text(strip=True)
+                        name = name_elem.get_text(strip=True)
+                        # Cherche la fonction dans un élément voisin
+                        function_elem = name_elem.find_next(['span', 'div'])
+                        if function_elem:
+                            func_text = function_elem.get_text(strip=True)
+                            keywords = ['Président', 'Directeur', 'Gérant',
+                                        'PDG', 'CEO', 'DG', 'Administrateur',
+                                        'Fondateur']
+                            for kw in keywords:
+                                if kw.lower() in func_text.lower():
+                                    return f"{name} ({func_text})"
+                        return name
             return ""
-        except:
+        except Exception:
             return ""
 
     def _extract_activite(self, soup: BeautifulSoup) -> str:
@@ -199,6 +293,7 @@ class SocieteEnricher:
         """Retourne un dict vide en cas d'erreur"""
         return {
             'ca_euros': None,
+            'evolution_ca': '',
             'resultat_euros': None,
             'effectif_societe': '',
             'telephone': '',
@@ -208,7 +303,8 @@ class SocieteEnricher:
             'activite_desc': '',
         }
 
-    def enrich_dataframe(self, df: pd.DataFrame, filter_ca: bool = True) -> pd.DataFrame:
+    def enrich_dataframe(self, df: pd.DataFrame, filter_ca: bool = True,
+                         target_limit: int = None) -> pd.DataFrame:
         """
         Enrichit un DataFrame complet
 
@@ -252,6 +348,11 @@ class SocieteEnricher:
             after = len(enriched_df)
             if before != after:
                 print(f"  Filtrage CA ({ca_min/1e6:.0f}M-{ca_max/1e6:.0f}M): {before} -> {after} entreprises")
+
+        # Tronque au nombre cible si spécifié
+        if target_limit and len(enriched_df) > target_limit:
+            enriched_df = enriched_df.head(target_limit)
+            print(f"  Limite appliquée: {target_limit} entreprises retenues")
 
         print(f"[OK] {len(enriched_df)} entreprises enrichies\n")
 

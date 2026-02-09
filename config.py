@@ -141,26 +141,51 @@ ANTHROPIC_API_KEY = get_anthropic_key()
 SCRAPING_CONFIG = {
     # Délai entre requêtes (secondes)
     "delay_between_requests": 2,
-    
+
     # Timeout des requêtes (secondes)
     "request_timeout": 10,
-    
+
     # Nombre de tentatives en cas d'échec
     "max_retries": 3,
-    
+
     # User agent
     "user_agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
 }
+
+# Sur-fetching : on récupère N fois plus d'entreprises que demandé
+# pour compenser les pertes lors du filtrage CA
+OVERFETCH_MULTIPLIER = 3
 
 # ============================================
 # SCORING IA
 # ============================================
 
 SCORING_CATEGORIES = {
-    "A": "Prospect prioritaire - Fort potentiel M&A/Advisory",
-    "B": "Prospect intéressant - Potentiel moyen",
-    "C": "Prospect secondaire - Faible priorité",
-    "D": "Hors cible - Peu pertinent",
+    "A": "PME indépendante, rentable, dirigeant fondateur",
+    "B": "PME intéressante, 1-2 critères manquants",
+    "C": "Trop petite ou signes d'accompagnement existant",
+    "D": "Déjà en LBO / fonds au capital / hors cible CA",
+}
+
+# ============================================
+# WEB SEARCH (QUALIFIER IA)
+# ============================================
+
+WEB_SEARCH_CONFIG = {
+    # Max recherches web par entreprise
+    "max_uses_per_company": 5,
+
+    # Max tokens pour l'appel API qualifier (augmenté pour web search)
+    "max_tokens": 4096,
+
+    # Délai entre appels API qualifier (secondes)
+    "delay_between_qualifications": 3,
+
+    # Taille du batch avant pause longue
+    "batch_size": 3,
+
+    # Durée de la pause après chaque batch (secondes)
+    "batch_pause": 5,
 }
 
 # ============================================
