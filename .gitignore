@@ -1,0 +1,25 @@
+# Secrets - NE JAMAIS COMMIT
+.streamlit/secrets.toml
+*.env
+.env*
+
+# Outputs
+outputs/
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+venv/
+ENV/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+
+# OS
+.DS_Store
+Thumbs.db

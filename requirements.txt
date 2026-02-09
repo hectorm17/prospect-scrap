@@ -1,0 +1,30 @@
+# Dépendances pour le scraper de prospects B2B
+
+# Web scraping & HTTP
+requests==2.31.0
+beautifulsoup4==4.12.3
+selenium==4.18.1
+lxml==5.1.0
+
+# Data manipulation
+pandas==2.2.0
+openpyxl==3.1.2
+xlsxwriter==3.2.0
+
+# API Anthropic (Claude)
+anthropic==0.18.1
+
+# Interface web
+streamlit==1.31.1
+
+# Utilitaires
+python-dotenv==1.0.1
+tqdm==4.66.2
+retry==0.9.2
+
+# Rate limiting
+ratelimit==2.2.1
+
+# API Server (pour n8n/Make)
+flask==3.0.2
+flask-cors==4.0.0
