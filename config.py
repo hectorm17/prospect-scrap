@@ -179,13 +179,14 @@ WEB_SEARCH_CONFIG = {
     "max_tokens": 4096,
 
     # Délai entre appels API qualifier (secondes)
-    "delay_between_qualifications": 3,
+    # Note: le web search consomme ~10k tokens/appel, rate limit free tier = 30k/min
+    "delay_between_qualifications": 15,
 
     # Taille du batch avant pause longue
-    "batch_size": 3,
+    "batch_size": 2,
 
     # Durée de la pause après chaque batch (secondes)
-    "batch_pause": 5,
+    "batch_pause": 30,
 }
 
 # ============================================

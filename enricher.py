@@ -189,18 +189,32 @@ class SocieteEnricher:
             return ""
 
     def _extract_telephone(self, soup: BeautifulSoup) -> str:
-        """Extrait le numéro de téléphone"""
+        """Extrait le numéro de téléphone de l'entreprise"""
         try:
-            html_text = str(soup)
-            # Cherche un pattern téléphone français
-            match = re.search(r'0[1-9](?:[\s.-]?\d{2}){4}', html_text)
-            if match:
-                tel = match.group(0)
-                # Vérifie que ce n'est pas un SIREN/SIRET
-                if len(re.sub(r'\D', '', tel)) == 10:
-                    return tel
+            # Numéros génériques Societe.com à ignorer
+            blocked_numbers = {'0260210000', '0899662006', '0891150515'}
+
+            # Méthode 1: liens tel: (le plus fiable)
+            for link in soup.find_all('a', href=True):
+                href = link['href']
+                if href.startswith('tel:'):
+                    tel = re.sub(r'\D', '', href.replace('tel:', ''))
+                    if len(tel) == 10 and tel not in blocked_numbers:
+                        return tel
+
+            # Méthode 2: cherche dans les sections pertinentes (pas header/footer)
+            main_content = soup.find('main') or soup.find('div', {'id': 'main'}) or soup
+            for section in main_content.find_all(['div', 'section', 'td']):
+                text = section.get_text()
+                if any(kw in text.lower() for kw in ['téléphone', 'tel', 'phone', 'contact']):
+                    match = re.search(r'0[1-9](?:[\s.-]?\d{2}){4}', text)
+                    if match:
+                        tel_digits = re.sub(r'\D', '', match.group(0))
+                        if len(tel_digits) == 10 and tel_digits not in blocked_numbers:
+                            return match.group(0)
+
             return ""
-        except:
+        except Exception:
             return ""
 
     def _extract_email(self, soup: BeautifulSoup) -> str:

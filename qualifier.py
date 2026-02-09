@@ -113,6 +113,25 @@ Réponds UNIQUEMENT en JSON valide, sans aucun texte avant ou après le JSON."""
 
         return prompt
 
+    def _api_call_with_retry(self, messages, tools, max_retries=3):
+        """Appel API avec retry et backoff exponentiel pour les rate limits"""
+        for attempt in range(max_retries + 1):
+            try:
+                response = self.client.messages.create(
+                    model=self.model,
+                    max_tokens=self.web_search_config['max_tokens'],
+                    messages=messages,
+                    tools=tools
+                )
+                return response
+            except anthropic.RateLimitError as e:
+                if attempt == max_retries:
+                    raise
+                wait_time = 30 * (2 ** attempt)  # 30s, 60s, 120s
+                print(f"  Rate limit atteint, attente {wait_time}s...")
+                time.sleep(wait_time)
+        return None
+
     def analyze_company(self, company_data: Dict) -> Dict:
         """Analyse une entreprise avec Claude + recherche web"""
         try:
@@ -131,12 +150,7 @@ Réponds UNIQUEMENT en JSON valide, sans aucun texte avant ou après le JSON."""
 
             messages = [{"role": "user", "content": prompt}]
 
-            response = self.client.messages.create(
-                model=self.model,
-                max_tokens=self.web_search_config['max_tokens'],
-                messages=messages,
-                tools=tools
-            )
+            response = self._api_call_with_retry(messages, tools)
 
             # Gère pause_turn : continue la conversation si Claude a besoin de plus de tours
             max_continuations = 10
@@ -144,12 +158,7 @@ Réponds UNIQUEMENT en JSON valide, sans aucun texte avant ou après le JSON."""
             while response.stop_reason == "pause_turn" and continuation < max_continuations:
                 messages.append({"role": "assistant", "content": response.content})
                 messages.append({"role": "user", "content": "Continue."})
-                response = self.client.messages.create(
-                    model=self.model,
-                    max_tokens=self.web_search_config['max_tokens'],
-                    messages=messages,
-                    tools=tools
-                )
+                response = self._api_call_with_retry(messages, tools)
                 continuation += 1
 
             # Extrait le texte de la réponse (ignore les blocs tool_use/tool_result)
