@@ -172,21 +172,20 @@ SCORING_CATEGORIES = {
 # ============================================
 
 WEB_SEARCH_CONFIG = {
-    # Max recherches web par entreprise
-    "max_uses_per_company": 5,
+    # Max recherches web par entreprise (1 = une seule recherche optimisée)
+    "max_uses_per_company": 1,
 
-    # Max tokens pour l'appel API qualifier (augmenté pour web search)
+    # Max tokens pour l'appel API qualifier
     "max_tokens": 4096,
 
     # Délai entre appels API qualifier (secondes)
-    # Note: le web search consomme ~10k tokens/appel, rate limit free tier = 30k/min
-    "delay_between_qualifications": 15,
+    "delay_between_qualifications": 5,
 
     # Taille du batch avant pause longue
-    "batch_size": 2,
+    "batch_size": 3,
 
     # Durée de la pause après chaque batch (secondes)
-    "batch_pause": 30,
+    "batch_pause": 15,
 }
 
 # ============================================

@@ -72,14 +72,10 @@ Tu travailles pour un cabinet de conseil en corporate advisory qui cherche des P
 
 **MISSION**
 
-Utilise la recherche web pour approfondir ton analyse de cette entreprise. Recherche :
+Fais UNE SEULE recherche web avec cette requête exacte :
+"{nom} levée fonds LBO acquisition actionnaires dirigeant transmission"
 
-1. **Levées de fonds** : "{nom}" + "levée de fonds" ou "financement"
-2. **Activité LBO** : "{nom}" + "LBO" ou "rachat" ou "acquisition"
-3. **Investisseurs financiers** : "{nom}" + "fonds d'investissement" ou "private equity" ou "capital"
-4. **Informations dirigeant** : le dirigeant est-il le fondateur ? Son âge approximatif ?
-5. **Articles de presse** : actualités récentes sur l'entreprise
-6. **Site web** : si non disponible ci-dessus, trouve-le
+Analyse les résultats pour identifier : levées de fonds, LBO, acquisitions, actionnaires financiers (fonds, private equity), profil du dirigeant (fondateur ou non, âge), site web et email si trouvables.
 
 ---
 
