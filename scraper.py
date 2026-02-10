@@ -270,6 +270,9 @@ class DataGouvScraper:
 
                     # Dirigeant
                     'dirigeant_principal': self._extract_dirigeant(company),
+
+                    # Liens
+                    'url_pappers': f"https://www.pappers.fr/entreprise/{company.get('siren', '')}",
                 }
 
                 data.append(row)

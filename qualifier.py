@@ -200,6 +200,7 @@ Réponds UNIQUEMENT en JSON :
             ('date_creation', 'Date de Création'),
             ('forme_juridique', 'Forme Juridique'),
             ('siren', 'SIREN'),
+            ('url_pappers', 'Fiche Pappers'),
             ('resume', 'Résumé Activité'),
             ('analyse', 'Analyse M&A'),
             ('justification', 'Justification Score'),
@@ -286,12 +287,12 @@ Réponds UNIQUEMENT en JSON :
             # --- LARGEURS ---
             widths = {
                 'Score': 7, 'Qualification': 30, 'Entreprise': 35,
-                "Chiffre d'Affaires (M€)": 18, 'Évolution CA': 30,
+                "Chiffre d'Affaires (M€)": 18, 'Évolution CA': 22,
                 'Résultat Net (M€)': 16, "Secteur d'Activité": 30,
                 'Dirigeant Principal': 25, 'Téléphone': 14, 'Email': 25,
                 'Site Web': 25, 'Adresse du Siège': 35, 'Ville': 15,
                 'Région': 18, 'Effectif': 18, 'Date de Création': 14,
-                'Forme Juridique': 14, 'SIREN': 12,
+                'Forme Juridique': 14, 'SIREN': 12, 'Fiche Pappers': 40,
                 'Résumé Activité': 40, 'Analyse M&A': 40,
                 'Justification Score': 35,
             }

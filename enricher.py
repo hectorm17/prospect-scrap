@@ -151,10 +151,7 @@ class SocieteEnricher:
                 else:
                     trend = "Stable"
 
-                values_str = ', '.join(
-                    f"{y}: {ca_values[y]/1e6:.1f}M" for y in sorted_years[-3:]
-                )
-                return f"{trend} ({growth_pct:+.0f}% sur {years_span}a) - {values_str}"
+                return f"{trend} ({growth_pct:+.0f}% sur {years_span}a)"
 
             return ""
         except Exception:
