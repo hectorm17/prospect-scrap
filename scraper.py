@@ -82,7 +82,7 @@ class DataGouvScraper:
     """Scraper pour l'API de l'annuaire des entreprises"""
 
     BASE_URL = "https://recherche-entreprises.api.gouv.fr/search"
-    MAX_PAGES = 20  # Max pages à parcourir (post-filtering discards many)
+    MAX_PAGES = 400  # API max = 10000/25 = 400 pages
 
     def __init__(self):
         self.session = requests.Session()
@@ -218,7 +218,7 @@ class DataGouvScraper:
                     break
 
                 page += 1
-                time.sleep(0.5)
+                time.sleep(0.15)
 
             except Exception as e:
                 print(f"  Erreur page {page}: {e}")
@@ -272,7 +272,7 @@ class DataGouvScraper:
                     'code_postal': siege.get('code_postal', ''),
                     'ville': siege.get('libelle_commune', ''),
                     'departement': siege.get('departement', ''),
-                    'region': siege.get('region', ''),
+                    'region': config.REGIONS.get(siege.get('region', ''), siege.get('region', '')),
                     'adresse_complete': self._build_complete_address(siege),
 
                     # Dirigeant + âge (directement depuis l'API)
