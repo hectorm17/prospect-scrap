@@ -281,6 +281,7 @@ class DataGouvScraper:
 
                     # Liens
                     'url_pappers': f"https://www.pappers.fr/entreprise/{company.get('siren', '')}",
+                    'url_datagouv': f"https://annuaire-entreprises.data.gouv.fr/entreprise/{company.get('siren', '')}",
                 }
 
                 data.append(row)

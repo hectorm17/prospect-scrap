@@ -44,6 +44,7 @@ class SocieteEnricher:
             soup = BeautifulSoup(response.content, 'lxml')
 
             return {
+                'ca_societe': self._extract_ca(soup),
                 'telephone': self._extract_telephone(soup),
                 'email': self._extract_email(soup),
                 'site_web': self._extract_website(soup),
@@ -64,6 +65,28 @@ class SocieteEnricher:
         slug = re.sub(r'[\s]+', '-', slug)
         slug = slug.strip('-')
         return slug[:50] if slug else "entreprise"
+
+    def _extract_ca(self, soup: BeautifulSoup) -> Optional[float]:
+        """Extrait le CA depuis Societe.com (fallback quand l'API n'a pas le CA)"""
+        try:
+            html_text = str(soup)
+            match = re.search(r'ADSTACK\.data\.chiffre\s*=\s*(\d+)', html_text)
+            if match:
+                return float(match.group(1))
+
+            patterns = [
+                r'"ca"\s*:\s*(\d+)',
+                r'"chiffre"\s*:\s*(\d+)',
+            ]
+            for pattern in patterns:
+                match = re.search(pattern, html_text, re.IGNORECASE)
+                if match:
+                    num = float(match.group(1))
+                    if num > 1000:
+                        return num
+            return None
+        except Exception:
+            return None
 
     def _extract_telephone(self, soup: BeautifulSoup) -> str:
         """Extrait le numéro de téléphone"""
@@ -213,6 +236,7 @@ class SocieteEnricher:
     def _empty_data(self) -> Dict:
         """Retourne un dict vide en cas d'erreur"""
         return {
+            'ca_societe': None,
             'telephone': '',
             'email': '',
             'site_web': '',
@@ -260,6 +284,12 @@ class SocieteEnricher:
             societe_data = self.enrich_company(siren, nom)
 
             enriched_row = {**row.to_dict()}
+
+            # CA fallback: si l'API n'a pas de CA, utilise Societe.com
+            ca_societe = societe_data.pop('ca_societe', None)
+            if ca_societe and (not enriched_row.get('ca_euros') or pd.isna(enriched_row.get('ca_euros'))):
+                enriched_row['ca_euros'] = ca_societe
+
             # Merge: ne remplace que si la valeur Societe.com est non-vide
             for key, val in societe_data.items():
                 if val:

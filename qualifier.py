@@ -339,6 +339,7 @@ def format_excel_output(df: pd.DataFrame, output_file: str = None) -> bytes:
         ('forme_juridique', 'Forme Juridique'),
         ('siren', 'SIREN'),
         ('url_pappers', 'Fiche Pappers'),
+        ('url_datagouv', 'Fiche Data.gouv'),
         ('resume', 'Resume Activite'),
         ('analyse', 'Analyse M&A'),
         ('justification', 'Justification Score'),
@@ -421,7 +422,7 @@ def format_excel_output(df: pd.DataFrame, output_file: str = None) -> bytes:
             'Site Web': 25, 'Adresse du Siege': 35, 'Ville': 15,
             'Region': 18, 'Effectif': 18, 'Date de Creation': 14,
             'Forme Juridique': 14, 'SIREN': 12, 'Fiche Pappers': 40,
-            'Resume Activite': 40, 'Analyse M&A': 40,
+            'Fiche Data.gouv': 45, 'Resume Activite': 40, 'Analyse M&A': 40,
             'Justification Score': 35,
         }
         for col_num, col_name in enumerate(df_final.columns):

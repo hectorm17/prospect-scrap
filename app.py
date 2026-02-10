@@ -549,6 +549,7 @@ def show_results(df, excel_bytes, filename):
         'ville': 'Ville',
         'telephone': 'Tel',
         'url_pappers': 'Pappers',
+        'url_datagouv': 'Data.gouv',
         'justification': 'Justification',
     }
     available = {k: v for k, v in cols_map.items() if k in preview_df.columns}
