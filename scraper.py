@@ -2,9 +2,11 @@
 Scraper pour récupérer les entreprises depuis data.gouv.fr
 API: Recherche d'entreprises (Annuaire des Entreprises)
 
-Note: L'API ne fournit PAS les données financières (CA).
-On utilise les tranches d'effectif comme proxy pour la taille.
-Le CA sera récupéré via Pappers dans l'étape d'enrichissement.
+IMPORTANT:
+- L'API region/departement filtre par TOUT établissement, pas le siège
+- On post-filtre par siege.region / siege.departement pour avoir le bon résultat
+- activite_principale nécessite le code NAF complet (ex: "62.01Z")
+- Pour filtrer par secteur large (2 chiffres), on utilise section_activite_principale
 """
 
 import requests
@@ -12,7 +14,6 @@ import pandas as pd
 import time
 from datetime import datetime
 from typing import List, Dict, Optional
-from tqdm import tqdm
 import config
 
 # Mapping tranches effectif INSEE -> description
@@ -37,11 +38,51 @@ TRANCHES_EFFECTIF = {
 # Tranches recommandées pour PME (CA 5-50M€ typiquement)
 TRANCHES_PME = ['12', '21', '22', '31']  # 20-249 salariés
 
+# Mapping code NAF 2 chiffres → section lettre (pour l'API)
+# L'API n'accepte pas les codes 2 chiffres, il faut la lettre de section
+NAF_TO_SECTION = {
+    "41": "F", "42": "F", "43": "F",  # Construction
+    "46": "G", "47": "G",  # Commerce
+    "58": "J", "62": "J", "63": "J",  # Information/Communication
+    "64": "K", "66": "K",  # Finance
+    "68": "L",  # Immobilier
+    "69": "M", "70": "M", "71": "M", "72": "M", "73": "M", "74": "M",  # Activités spécialisées
+    "77": "N", "78": "N",  # Activités de services admin
+    "85": "P",  # Enseignement
+    "86": "Q",  # Santé
+}
+
+# Mapping région INSEE → départements du siège
+REGION_DEPARTEMENTS = {
+    "11": ["75", "77", "78", "91", "92", "93", "94", "95"],  # Île-de-France
+    "24": ["18", "28", "36", "37", "41", "45"],  # Centre-Val de Loire
+    "27": ["21", "25", "39", "58", "70", "71", "89", "90"],  # Bourgogne-Franche-Comté
+    "28": ["14", "27", "50", "61", "76"],  # Normandie
+    "32": ["02", "59", "60", "62", "80"],  # Hauts-de-France
+    "44": ["08", "10", "51", "52", "54", "55", "57", "67", "68", "88"],  # Grand Est
+    "52": ["44", "49", "53", "72", "85"],  # Pays de la Loire
+    "53": ["22", "29", "35", "56"],  # Bretagne
+    "75": ["16", "17", "19", "23", "24", "33", "40", "47", "64", "79", "86", "87"],  # Nouvelle-Aquitaine
+    "76": ["09", "11", "12", "30", "31", "32", "34", "46", "48", "65", "66", "81", "82"],  # Occitanie
+    "84": ["01", "03", "07", "15", "26", "38", "42", "43", "63", "69", "73", "74"],  # Auvergne-Rhône-Alpes
+    "93": ["04", "05", "06", "13", "83", "84"],  # PACA
+    "94": ["2A", "2B"],  # Corse
+}
+
+# Mapping forme juridique texte → codes nature_juridique
+FORME_TO_NATURE = {
+    "SAS": ["5710"],
+    "SARL": ["5499"],
+    "SA": ["5505", "5510", "5515", "5520", "5522", "5525", "5530", "5599"],
+    "SCI": ["6540"],
+}
+
 
 class DataGouvScraper:
     """Scraper pour l'API de l'annuaire des entreprises"""
 
     BASE_URL = "https://recherche-entreprises.api.gouv.fr/search"
+    MAX_PAGES = 20  # Max pages à parcourir (post-filtering discards many)
 
     def __init__(self):
         self.session = requests.Session()
@@ -51,57 +92,64 @@ class DataGouvScraper:
 
     def search_companies(self, filtres: Dict) -> List[Dict]:
         """
-        Recherche les entreprises selon les filtres
+        Recherche les entreprises selon les filtres.
 
-        Paramètres supportés par l'API:
-        - activite_principale: Code NAF (ex: "62.01Z")
-        - region: Code région INSEE (ex: "11" pour IDF)
-        - tranche_effectif_salarie: Codes séparés par virgule
-        - etat_administratif: "A" pour actif
-
-        Returns:
-            Liste de dictionnaires contenant les infos des entreprises
+        Stratégie:
+        1. Appel API avec filtres supportés (effectif, NAF, nature juridique)
+        2. Post-filtrage par siège.region (l'API filtre par tout établissement)
+        3. Post-filtrage par âge
+        4. Déduplication par SIREN
+        5. Retourne limit * OVERFETCH_MULTIPLIER résultats
         """
-        print("\n🔍 Recherche d'entreprises sur data.gouv.fr...")
-
-        all_companies = []
-        page = 1
-        per_page = 25
-        limit = filtres.get('limit', 100)
-        # Sur-fetcher pour compenser les pertes lors du filtrage CA
+        limit = filtres.get('limit', 100) or 100
         overfetch_limit = int(limit * config.OVERFETCH_MULTIPLIER)
+        region_code = filtres.get('region')
+        target_depts = REGION_DEPARTEMENTS.get(region_code, []) if region_code else []
 
-        # Construction des paramètres
+        print(f"\n[Scraper] Recherche data.gouv.fr...")
+        print(f"  Limite cible: {limit} (overfetch: {overfetch_limit})")
+        if region_code:
+            print(f"  Region: {config.REGIONS.get(region_code, region_code)} → departements siege: {target_depts}")
+
+        # Construction des paramètres API
         params = {
-            'per_page': per_page,
-            'etat_administratif': 'A',  # Entreprises actives uniquement
+            'per_page': 25,
+            'etat_administratif': 'A',
         }
 
-        # Secteur NAF
-        if filtres.get('secteur_naf'):
-            params['activite_principale'] = filtres['secteur_naf']
-
-        # Région
-        if filtres.get('region'):
-            params['region'] = filtres['region']
-
-        # Tranches d'effectif (proxy pour taille/CA)
+        # Tranches d'effectif
         tranches = filtres.get('tranches_effectif', TRANCHES_PME)
         if tranches:
             params['tranche_effectif_salarie'] = ','.join(tranches)
+            print(f"  Effectif: {tranches}")
 
-        # Forme juridique (dans la query)
-        query_parts = []
-        if filtres.get('forme_juridique'):
-            query_parts.append(f"nature_juridique:{filtres['forme_juridique']}")
+        # Secteur NAF - l'API veut le code complet ou la section lettre
+        secteur = filtres.get('secteur_naf')
+        if secteur:
+            if '.' in secteur:
+                # Code complet (ex: "62.01Z")
+                params['activite_principale'] = secteur
+                print(f"  NAF: {secteur}")
+            elif secteur in NAF_TO_SECTION:
+                # Code 2 chiffres → section lettre
+                section = NAF_TO_SECTION[secteur]
+                params['section_activite_principale'] = section
+                print(f"  Section NAF: {secteur} → section {section}")
+            else:
+                print(f"  NAF {secteur}: non mappable, ignoré")
 
-        params['q'] = ' '.join(query_parts) if query_parts else ''
+        # Forme juridique
+        forme = filtres.get('forme_juridique')
+        if forme and forme in FORME_TO_NATURE:
+            params['nature_juridique'] = ','.join(FORME_TO_NATURE[forme])
+            print(f"  Forme: {forme} → {FORME_TO_NATURE[forme]}")
 
-        print(f"  Filtres: secteur={filtres.get('secteur_naf', 'tous')}, "
-              f"région={filtres.get('region', 'toutes')}, "
-              f"effectif={tranches}")
+        # Pagination et collecte
+        all_companies = []
+        seen_sirens = set()
+        page = 1
 
-        while len(all_companies) < overfetch_limit:
+        while page <= self.MAX_PAGES:
             params['page'] = page
 
             try:
@@ -113,63 +161,85 @@ class DataGouvScraper:
                 response.raise_for_status()
                 data = response.json()
 
+                if 'erreur' in data:
+                    print(f"  Erreur API: {data['erreur'][:100]}")
+                    break
+
                 results = data.get('results', [])
                 total = data.get('total_results', 0)
 
                 if page == 1:
-                    print(f"  📊 {total} entreprises trouvées au total")
+                    print(f"  API: {total} résultats totaux")
 
                 if not results:
+                    print(f"  Page {page}: aucun résultat, arrêt")
                     break
 
-                # Filtre par âge si défini
-                filtered = self._filter_by_age(results, filtres)
-                all_companies.extend(filtered)
+                # Post-filtrage par siège
+                added = 0
+                for company in results:
+                    siren = company.get('siren')
+                    if not siren or siren in seen_sirens:
+                        continue
 
-                print(f"  Page {page}: +{len(filtered)} entreprises")
+                    siege = company.get('siege', {})
 
-                # Pas de page suivante
-                if len(results) < per_page:
+                    # Filtre région: vérifier le département du SIÈGE
+                    if target_depts:
+                        siege_dept = siege.get('departement', '')
+                        if siege_dept not in target_depts:
+                            continue
+
+                    # Filtre NAF 2 chiffres: section est trop large, post-filtre
+                    if secteur and not '.' in secteur:
+                        company_naf = company.get('activite_principale', '')
+                        if not company_naf.startswith(secteur + '.'):
+                            continue
+
+                    # Filtre âge
+                    age_min = filtres.get('age_min', 0)
+                    if age_min > 0:
+                        age = self._calculate_age(company)
+                        if age < age_min:
+                            continue
+
+                    seen_sirens.add(siren)
+                    all_companies.append(company)
+                    added += 1
+
+                print(f"  Page {page}: {len(results)} résultats API → +{added} retenus (total: {len(all_companies)})")
+
+                # Assez de résultats ?
+                if len(all_companies) >= overfetch_limit:
+                    break
+
+                # Plus de pages ?
+                if len(results) < 25:
                     break
 
                 page += 1
-                time.sleep(0.5)  # Respecte l'API
+                time.sleep(0.5)
 
             except Exception as e:
-                print(f"❌ Erreur page {page}: {e}")
+                print(f"  Erreur page {page}: {e}")
                 break
 
-        # Applique la limite de sur-fetching
         all_companies = all_companies[:overfetch_limit]
-        print(f"✅ Total retenu: {len(all_companies)} entreprises\n")
+        print(f"  Total retenu: {len(all_companies)} entreprises uniques")
+
         return all_companies
 
-    def _filter_by_age(self, companies: List[Dict], filtres: Dict) -> List[Dict]:
-        """Filtre les entreprises par âge minimum"""
-        age_min = filtres.get('age_min', 0)
-        if age_min <= 0:
-            return companies
-
-        filtered = []
-        for company in companies:
-            age = self._calculate_age(company)
-            if age >= age_min:
-                filtered.append(company)
-        return filtered
-    
     def _calculate_age(self, company: Dict) -> int:
         """Calcule l'âge de l'entreprise en années"""
         try:
             date_creation = company.get('date_creation')
             if not date_creation:
                 return 0
-            
             creation_year = int(date_creation[:4])
-            current_year = datetime.now().year
-            return current_year - creation_year
-        except:
+            return datetime.now().year - creation_year
+        except Exception:
             return 0
-    
+
     def to_dataframe(self, companies: List[Dict]) -> pd.DataFrame:
         """Convertit les résultats en DataFrame"""
         data = []
@@ -194,19 +264,17 @@ class DataGouvScraper:
                     'adresse': siege.get('adresse', ''),
                     'code_postal': siege.get('code_postal', ''),
                     'ville': siege.get('libelle_commune', ''),
+                    'departement': siege.get('departement', ''),
                     'region': siege.get('region', ''),
                     'adresse_complete': self._build_complete_address(siege),
 
-                    # Dirigeant (si dispo dans l'API)
+                    # Dirigeant
                     'dirigeant_principal': self._extract_dirigeant(company),
-
-                    # Lien Pappers pour enrichissement
-                    'url_pappers': f"https://www.pappers.fr/entreprise/{company.get('siren', '')}",
                 }
 
                 data.append(row)
             except Exception as e:
-                print(f"⚠️ Erreur parsing entreprise: {e}")
+                print(f"  Erreur parsing: {e}")
                 continue
 
         return pd.DataFrame(data)
@@ -236,32 +304,29 @@ class DataGouvScraper:
                 qualite = premier.get('qualite', '')
                 return f"{prenom} {nom} ({qualite})".strip()
             return ""
-        except:
+        except Exception:
             return ""
 
 
 def main():
     """Test du scraper"""
     scraper = DataGouvScraper()
-    
-    # Utilise les filtres du config
     companies = scraper.search_companies(config.FILTRES)
-    
+
     if companies:
         df = scraper.to_dataframe(companies)
-        
-        # Sauvegarde
+
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        import os
+        os.makedirs("outputs", exist_ok=True)
         output_file = f"outputs/data_gouv_raw_{timestamp}.xlsx"
         df.to_excel(output_file, index=False)
-        
-        print(f"✅ Fichier sauvegardé: {output_file}")
-        print(f"📊 {len(df)} entreprises exportées")
+
+        print(f"\nFichier: {output_file}")
+        print(f"{len(df)} entreprises exportées")
     else:
-        print("❌ Aucune entreprise trouvée")
+        print("Aucune entreprise trouvée")
 
 
 if __name__ == "__main__":
-    import os
-    os.makedirs("outputs", exist_ok=True)
     main()
