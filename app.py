@@ -370,11 +370,19 @@ def search_tab():
             st.caption("Entre ta cle API Anthropic pour activer la qualification IA")
 
     with st.expander("Plus de filtres"):
-        age_min = st.number_input("Age minimum (annees)", min_value=0, max_value=100, value=3)
+        age_min = st.number_input("Age minimum entreprise (annees)", min_value=0, max_value=100, value=3)
+        col_dir1, col_dir2 = st.columns(2)
+        with col_dir1:
+            age_dir_min = st.number_input("Age min dirigeant", min_value=0, max_value=99, value=0, help="0 = pas de filtre")
+        with col_dir2:
+            age_dir_max = st.number_input("Age max dirigeant", min_value=0, max_value=99, value=0, help="0 = pas de filtre")
         skip_enrichment = st.checkbox("Sauter l'enrichissement Societe.com")
 
     # ─── Summary pills ───
     pills = [f"CA {ca_min:.0f}-{ca_max:.0f}M", region, secteur, forme, f"Limit {limit}"]
+    if age_dir_min > 0 or age_dir_max > 0:
+        dir_range = f"Dirigeant {age_dir_min or '?'}-{age_dir_max or '?'} ans"
+        pills.append(dir_range)
     pills_html = ''.join(f'<span class="pill">{p}</span>' for p in pills)
     st.markdown(f'<div class="filter-pills">{pills_html}</div>', unsafe_allow_html=True)
 
@@ -388,14 +396,15 @@ def search_tab():
                 ca_min=ca_min * 1e6, ca_max=ca_max * 1e6,
                 region_code=region_code, secteur_code=secteur_code,
                 forme_code=forme_code, age_min=age_min, limit=limit,
+                age_dir_min=age_dir_min, age_dir_max=age_dir_max,
                 api_key=api_key, skip_enrichment=skip_enrichment,
                 enable_ia=enable_ia, filters_text=filters_text,
             )
 
 
 def run_pipeline(ca_min, ca_max, region_code, secteur_code, forme_code,
-                 age_min, limit, api_key, skip_enrichment, enable_ia,
-                 filters_text):
+                 age_min, limit, age_dir_min, age_dir_max,
+                 api_key, skip_enrichment, enable_ia, filters_text):
 
     os.makedirs("outputs", exist_ok=True)
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -408,6 +417,8 @@ def run_pipeline(ca_min, ca_max, region_code, secteur_code, forme_code,
         'secteur_naf': secteur_code,
         'forme_juridique': forme_code,
         'age_min': age_min,
+        'age_dirigeant_min': age_dir_min,
+        'age_dirigeant_max': age_dir_max,
         'limit': limit,
     }
 

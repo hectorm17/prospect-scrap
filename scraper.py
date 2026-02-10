@@ -196,11 +196,23 @@ class DataGouvScraper:
                         if not company_naf.startswith(secteur + '.'):
                             continue
 
-                    # Filtre âge
+                    # Filtre âge entreprise
                     age_min = filtres.get('age_min', 0)
                     if age_min > 0:
                         age = self._calculate_age(company)
                         if age < age_min:
+                            continue
+
+                    # Filtre âge dirigeant
+                    age_dir_min = filtres.get('age_dirigeant_min', 0)
+                    age_dir_max = filtres.get('age_dirigeant_max', 0)
+                    if age_dir_min > 0 or age_dir_max > 0:
+                        age_dir = self._extract_age_dirigeant(company)
+                        if age_dir is None:
+                            continue  # Age inconnu → exclure si filtre actif
+                        if age_dir_min > 0 and age_dir < age_dir_min:
+                            continue
+                        if age_dir_max > 0 and age_dir > age_dir_max:
                             continue
 
                     seen_sirens.add(siren)
