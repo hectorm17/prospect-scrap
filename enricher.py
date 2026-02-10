@@ -29,16 +29,7 @@ class SocieteEnricher:
         })
 
     def enrich_company(self, siren: str, nom: str = "") -> Dict:
-        """
-        Enrichit les données d'une entreprise depuis Societe.com
-
-        Args:
-            siren: Numéro SIREN de l'entreprise
-            nom: Nom de l'entreprise (pour construire l'URL)
-
-        Returns:
-            Dictionnaire avec les données enrichies
-        """
+        """Enrichit les données d'une entreprise depuis Societe.com"""
         # Construit l'URL (format: nom-siren.html)
         slug = self._slugify(nom) if nom else "entreprise"
         url = f"{self.BASE_URL}/{slug}-{siren}.html"
@@ -74,7 +65,6 @@ class SocieteEnricher:
         """Convertit un nom en slug URL"""
         if not text:
             return "entreprise"
-        # Supprime les caractères spéciaux, garde lettres/chiffres/tirets
         slug = text.lower()
         slug = re.sub(r'[^a-z0-9\s-]', '', slug)
         slug = re.sub(r'[\s]+', '-', slug)
@@ -82,7 +72,7 @@ class SocieteEnricher:
         return slug[:50] if slug else "entreprise"
 
     def _extract_ca(self, soup: BeautifulSoup) -> Optional[float]:
-        """Extrait le chiffre d'affaires"""
+        """Extrait le chiffre d'affaires avec plusieurs méthodes de fallback"""
         try:
             html_text = str(soup)
 
@@ -91,8 +81,7 @@ class SocieteEnricher:
             if match:
                 return float(match.group(1))
 
-            # Méthode 2: Cherche dans les divs avec data-year et data-a (année courante)
-            # Pattern: <div>Chiffre d'affaires</div> suivi de <div data-year="2024" data-a>
+            # Méthode 2: Cherche dans les divs data-year/data-a
             ca_label = soup.find('div', string="Chiffre d'affaires")
             if ca_label:
                 parent = ca_label.find_parent()
@@ -106,8 +95,23 @@ class SocieteEnricher:
                             if val:
                                 return float(val)
 
+            # Méthode 3: Regex sur tout le HTML pour "chiffre d'affaires" suivi d'un montant
+            patterns = [
+                r'chiffre[^"]*?(\d[\d\s.,]*)\s*(?:€|euros?|EUR)',
+                r'"ca"\s*:\s*(\d+)',
+                r'"chiffre"\s*:\s*(\d+)',
+            ]
+            for pattern in patterns:
+                match = re.search(pattern, html_text, re.IGNORECASE)
+                if match:
+                    val = re.sub(r'[^\d.]', '', match.group(1))
+                    if val:
+                        num = float(val)
+                        if num > 1000:  # Seuil minimal pour éviter les faux positifs
+                            return num
+
             return None
-        except:
+        except Exception:
             return None
 
     def _extract_ca_evolution(self, soup: BeautifulSoup) -> str:
@@ -148,7 +152,7 @@ class SocieteEnricher:
                     trend = "Stable"
 
                 values_str = ', '.join(
-                    f"{y}: {ca_values[y]/1e6:.1f}M€" for y in sorted_years[-3:]
+                    f"{y}: {ca_values[y]/1e6:.1f}M" for y in sorted_years[-3:]
                 )
                 return f"{trend} ({growth_pct:+.0f}% sur {years_span}a) - {values_str}"
 
@@ -159,10 +163,9 @@ class SocieteEnricher:
     def _extract_resultat(self, soup: BeautifulSoup) -> Optional[float]:
         """Extrait le résultat net"""
         try:
-            # Cherche "Résultat" ou "Bénéfice"
             for elem in soup.find_all('div'):
                 text = elem.get_text()
-                if 'sultat' in text or 'Bénéfice' in text:
+                if 'sultat' in text or 'néfice' in text:
                     next_elem = elem.find_next('span', class_='xDpNbr')
                     if next_elem:
                         val = next_elem.get_text(strip=True)
@@ -171,7 +174,7 @@ class SocieteEnricher:
                         if val and val != 'NC':
                             return float(val)
             return None
-        except:
+        except Exception:
             return None
 
     def _extract_effectif(self, soup: BeautifulSoup) -> str:
@@ -180,12 +183,11 @@ class SocieteEnricher:
             for elem in soup.find_all(['div', 'span', 'td']):
                 text = elem.get_text()
                 if 'Effectif' in text and 'salarié' in text.lower():
-                    # Extrait le nombre
                     match = re.search(r'(\d+)', text)
                     if match:
                         return f"{match.group(1)} salariés"
             return ""
-        except:
+        except Exception:
             return ""
 
     def _extract_telephone(self, soup: BeautifulSoup) -> str:
@@ -202,7 +204,7 @@ class SocieteEnricher:
                     if len(tel) == 10 and tel not in blocked_numbers:
                         return tel
 
-            # Méthode 2: cherche dans les sections pertinentes (pas header/footer)
+            # Méthode 2: cherche dans les sections pertinentes
             main_content = soup.find('main') or soup.find('div', {'id': 'main'}) or soup
             for section in main_content.find_all(['div', 'section', 'td']):
                 text = section.get_text()
@@ -272,6 +274,7 @@ class SocieteEnricher:
     def _extract_dirigeant(self, soup: BeautifulSoup) -> str:
         """Extrait le dirigeant avec sa fonction"""
         try:
+            # Méthode 1: Lien /dirigeant/ dans la page
             for elem in soup.find_all(['div', 'section']):
                 text = elem.get_text()
                 if 'Dirigeant' in text:
@@ -289,6 +292,16 @@ class SocieteEnricher:
                                 if kw.lower() in func_text.lower():
                                     return f"{name} ({func_text})"
                         return name
+
+            # Méthode 2: Meta description souvent contient le dirigeant
+            meta = soup.find('meta', {'name': 'description'})
+            if meta and 'content' in meta.attrs:
+                desc = meta['content']
+                # Cherche pattern "dirigée par NOM PRENOM"
+                match = re.search(r'dirig[ée]+e?\s+par\s+([A-ZÉÈÊËÀÂÄÏÎÔÖÙÛÜ][a-zéèêëàâäïîôöùûü]+(?:\s+[A-ZÉÈÊËÀÂÄÏÎÔÖÙÛÜ][a-zéèêëàâäïîôöùûü]+)+)', desc)
+                if match:
+                    return match.group(1)
+
             return ""
         except Exception:
             return ""
@@ -300,7 +313,7 @@ class SocieteEnricher:
             if meta and 'content' in meta.attrs:
                 return meta['content'][:100]
             return ""
-        except:
+        except Exception:
             return ""
 
     def _empty_data(self) -> Dict:
@@ -325,6 +338,7 @@ class SocieteEnricher:
         Args:
             df: DataFrame avec colonnes 'siren' et 'nom_entreprise'
             filter_ca: Si True, filtre par ca_min/ca_max après enrichissement
+            target_limit: Nombre max d'entreprises à retourner
 
         Returns:
             DataFrame enrichi (et filtré si filter_ca=True)

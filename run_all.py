@@ -105,7 +105,7 @@ def run_pipeline(custom_filtres=None):
     # ================================================
     # ÉTAPE 4 : QUALIFICATION IA
     # ================================================
-    print("\n📍 ÉTAPE 4/4 : Qualification IA + Recherche web")
+    print("\n📍 ÉTAPE 4/4 : Qualification IA")
     print("-" * 60)
     
     try:

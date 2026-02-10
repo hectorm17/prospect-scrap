@@ -1,11 +1,12 @@
 """
 Qualification des prospects avec Claude (Anthropic API)
-Score A/B/C/D + recherche web + justification pour chaque entreprise
+Score A/B/C/D basé sur les données scrapées - PAS de recherche web (rapide)
 """
 
 import anthropic
 import pandas as pd
-from typing import Dict, List
+from io import BytesIO
+from typing import Dict
 from tqdm import tqdm
 import time
 import json
@@ -14,253 +15,124 @@ import config
 
 
 class ProspectQualifier:
-    """Qualifie les prospects avec l'IA Claude + recherche web"""
+    """Qualifie les prospects avec l'IA Claude (sans web search = rapide)"""
 
     def __init__(self, api_key: str):
         self.client = anthropic.Anthropic(api_key=api_key)
         self.model = "claude-sonnet-4-20250514"
-        self.web_search_config = config.WEB_SEARCH_CONFIG
 
     def build_analysis_prompt(self, company_data: Dict) -> str:
-        """Construit le prompt d'analyse avec instructions de recherche web"""
+        """Construit le prompt d'analyse basé uniquement sur les données scrapées"""
 
         nom = company_data.get('nom_entreprise', 'N/A')
         siren = company_data.get('siren', 'N/A')
         secteur = company_data.get('libelle_naf', company_data.get('activite_desc', 'N/A'))
         ca = company_data.get('ca_euros', 0)
-        ca_formatted = f"{ca/1_000_000:.1f} M€" if ca else "N/A"
-        evolution_ca = company_data.get('evolution_ca', 'N/A')
-        resultat = company_data.get('resultat_euros', 'N/A')
-        if isinstance(resultat, (int, float)):
-            resultat = f"{resultat/1_000_000:.2f} M€"
-
+        ca_fmt = f"{ca/1_000_000:.1f} M€" if ca else "Non disponible"
+        evolution_ca = company_data.get('evolution_ca', '') or 'Non disponible'
+        resultat = company_data.get('resultat_euros', None)
+        resultat_fmt = f"{resultat/1_000_000:.2f} M€" if isinstance(resultat, (int, float)) else "Non disponible"
         forme = company_data.get('forme_juridique', 'N/A')
         date_creation = company_data.get('date_creation', 'N/A')
-        dirigeant = company_data.get('dirigeant_enrichi',
-                    company_data.get('dirigeant_principal', 'N/A'))
+        dirigeant = company_data.get('dirigeant_enrichi', company_data.get('dirigeant_principal', 'N/A'))
         ville = company_data.get('ville', 'N/A')
-        region = company_data.get('region', 'N/A')
-        effectif = company_data.get('tranche_effectif',
-                   company_data.get('effectif_societe', 'N/A'))
-        site_web = company_data.get('site_web', '')
-        telephone = company_data.get('telephone', '')
-        email = company_data.get('email', '')
-        adresse = company_data.get('adresse_complete', 'N/A')
+        effectif = company_data.get('tranche_effectif', company_data.get('effectif_societe', 'N/A'))
 
-        prompt = f"""Tu es un analyste corporate finance / M&A spécialisé dans les PME françaises.
-Tu travailles pour un cabinet de conseil en corporate advisory qui cherche des PME indépendantes
-à accompagner sur des opérations de croissance externe, cession, ou levée de fonds.
+        return f"""Tu es un analyste M&A spécialisé PME françaises. Analyse cette entreprise et score-la.
 
-**ENTREPRISE À ANALYSER**
-
-- Nom : {nom}
-- SIREN : {siren}
+ENTREPRISE :
+- Nom : {nom} (SIREN: {siren})
 - Secteur : {secteur}
-- Chiffre d'affaires : {ca_formatted}
+- CA : {ca_fmt}
 - Évolution CA : {evolution_ca}
-- Résultat net : {resultat}
+- Résultat net : {resultat_fmt}
 - Forme juridique : {forme}
-- Date de création : {date_creation}
+- Création : {date_creation}
 - Dirigeant : {dirigeant}
-- Localisation : {adresse} - {ville}, {region}
+- Ville : {ville}
 - Effectif : {effectif}
-- Téléphone : {telephone if telephone else 'Non disponible'}
-- Email : {email if email else 'Non disponible'}
-- Site web : {site_web if site_web else 'Non disponible'}
 
----
+SCORING :
+- A = PME indépendante, rentable, CA 10-30M€, fondateur dirigeant probable
+- B = PME correcte, CA 5-50M€, 1-2 critères manquants
+- C = Trop petite (CA<5M€), ou association, ou secteur inadapté
+- D = Hors cible (pas une entreprise commerciale, CA inconnu et petite structure)
 
-**MISSION**
-
-Fais UNE SEULE recherche web avec cette requête exacte :
-"{nom} levée fonds LBO acquisition actionnaires dirigeant transmission"
-
-Analyse les résultats pour identifier : levées de fonds, LBO, acquisitions, actionnaires financiers (fonds, private equity), profil du dirigeant (fondateur ou non, âge), site web et email si trouvables.
-
----
-
-**CRITÈRES DE SCORING**
-
-- **A** = PME indépendante, rentable, dirigeant fondateur, CA entre 10-30M€, aucun accompagnement financier détecté
-- **B** = PME correcte mais 1-2 critères manquants (CA un peu hors fourchette idéale, dirigeant non-fondateur, etc.)
-- **C** = Trop petite (CA < 5M€), ou signes d'accompagnement financier existant
-- **D** = Déjà en LBO, fonds au capital identifié, CA hors fourchette (< 3M€ ou > 60M€)
-
----
-
-**FORMAT DE RÉPONSE (STRICT)**
-
-Réponds UNIQUEMENT au format JSON suivant :
-
-{{
-  "resume_business": "Description de l'activité en 3-4 lignes : activité réelle, clients, positionnement, modèle économique",
-  "signaux_ma": "Signaux M&A détectés (levées, LBO, acquisitions, fonds au capital) ou 'Aucun signal détecté'",
-  "analyse_fit": "Analyse corporate advisory fit en 4-5 lignes : taille, complexité, structure, maturité, signaux",
-  "score": "A, B, C ou D",
-  "score_label": "Label descriptif du score",
-  "justification": "Justification du score en 2-3 lignes",
-  "dirigeant_info": "Nom + fonction + fondateur/non-fondateur + âge si trouvé, ou 'Non trouvé'",
-  "email_found": "Email trouvé pendant la recherche web, ou chaîne vide",
-  "site_web_found": "Site web trouvé pendant la recherche web, ou chaîne vide",
-  "evolution_ca": "Tendance de croissance si trouvée, ou chaîne vide"
-}}
-
-Réponds UNIQUEMENT en JSON valide, sans aucun texte avant ou après le JSON."""
-
-        return prompt
-
-    def _api_call_with_retry(self, messages, tools, max_retries=3):
-        """Appel API avec retry et backoff exponentiel pour les rate limits"""
-        for attempt in range(max_retries + 1):
-            try:
-                response = self.client.messages.create(
-                    model=self.model,
-                    max_tokens=self.web_search_config['max_tokens'],
-                    messages=messages,
-                    tools=tools
-                )
-                return response
-            except anthropic.RateLimitError as e:
-                if attempt == max_retries:
-                    raise
-                wait_time = 30 * (2 ** attempt)  # 30s, 60s, 120s
-                print(f"  Rate limit atteint, attente {wait_time}s...")
-                time.sleep(wait_time)
-        return None
+Réponds UNIQUEMENT en JSON :
+{{"score":"A/B/C/D","score_label":"label court","resume":"activité en 2 lignes","analyse":"fit M&A en 2 lignes","justification":"pourquoi ce score en 1 ligne"}}"""
 
     def analyze_company(self, company_data: Dict) -> Dict:
-        """Analyse une entreprise avec Claude + recherche web"""
+        """Analyse une entreprise avec Claude (appel simple, pas de web search)"""
         try:
             prompt = self.build_analysis_prompt(company_data)
 
-            tools = [{
-                "type": "web_search_20250305",
-                "name": "web_search",
-                "max_uses": self.web_search_config['max_uses_per_company'],
-                "user_location": {
-                    "type": "approximate",
-                    "country": "FR",
-                    "timezone": "Europe/Paris"
-                }
-            }]
+            response = self.client.messages.create(
+                model=self.model,
+                max_tokens=config.QUALIFIER_CONFIG['max_tokens'],
+                messages=[{"role": "user", "content": prompt}]
+            )
 
-            messages = [{"role": "user", "content": prompt}]
+            content = response.content[0].text.strip()
 
-            response = self._api_call_with_retry(messages, tools)
-
-            # Gère pause_turn : continue la conversation si Claude a besoin de plus de tours
-            max_continuations = 10
-            continuation = 0
-            while response.stop_reason == "pause_turn" and continuation < max_continuations:
-                messages.append({"role": "assistant", "content": response.content})
-                messages.append({"role": "user", "content": "Continue."})
-                response = self._api_call_with_retry(messages, tools)
-                continuation += 1
-
-            # Extrait le texte de la réponse (ignore les blocs tool_use/tool_result)
-            text_content = ""
-            for block in response.content:
-                if hasattr(block, 'text'):
-                    text_content += block.text
-
-            # Nettoie et parse le JSON
-            content = text_content.strip()
+            # Nettoie le markdown
             if '```json' in content:
                 content = content.split('```json')[1].split('```')[0]
             elif '```' in content:
                 content = content.split('```')[1].split('```')[0]
 
-            # Cherche un objet JSON dans le texte
+            # Trouve le JSON
             json_match = re.search(r'\{[^{}]*(?:\{[^{}]*\}[^{}]*)*\}', content)
             if json_match:
                 content = json_match.group(0)
 
-            content = content.strip()
-            result = json.loads(content)
-
-            # Validation des clés requises
-            required_keys = ['resume_business', 'signaux_ma', 'analyse_fit',
-                             'score', 'justification']
-            if not all(k in result for k in required_keys):
-                raise ValueError("Réponse IA incomplète")
+            result = json.loads(content.strip())
 
             # Normalise le score
-            score = result['score'].upper().strip()
+            score = result.get('score', 'C').upper().strip()
             if score not in ['A', 'B', 'C', 'D']:
                 score = 'C'
             result['score'] = score
-            result['score_label'] = config.SCORING_CATEGORIES.get(score, '')
+            result['score_label'] = result.get('score_label', config.SCORING_CATEGORIES.get(score, ''))
 
-            # Assure que toutes les clés attendues existent
-            for key in ['dirigeant_info', 'email_found', 'site_web_found',
-                        'evolution_ca', 'signaux_ma', 'score_label']:
+            # Assure les clés
+            for key in ['resume', 'analyse', 'justification', 'score_label']:
                 if key not in result:
                     result[key] = ''
 
             return result
 
-        except json.JSONDecodeError:
-            print(f"  Warning: JSON parse error for {company_data.get('nom_entreprise', 'N/A')}")
-            return self._default_analysis()
+        except anthropic.RateLimitError:
+            print(f"  Rate limit, attente 10s...")
+            time.sleep(10)
+            try:
+                return self.analyze_company(company_data)
+            except Exception:
+                return self._default_analysis()
         except Exception as e:
-            print(f"  Warning: AI analysis error: {e}")
+            print(f"  Erreur IA: {str(e)[:60]}")
             return self._default_analysis()
 
     def _default_analysis(self) -> Dict:
-        """Analyse par défaut en cas d'erreur"""
         return {
-            'resume_business': 'Analyse non disponible',
-            'signaux_ma': 'Non analysé',
-            'analyse_fit': 'Analyse non disponible',
             'score': 'C',
             'score_label': config.SCORING_CATEGORIES['C'],
-            'justification': "Erreur lors de l'analyse automatique",
-            'dirigeant_info': '',
-            'email_found': '',
-            'site_web_found': '',
-            'evolution_ca': '',
+            'resume': 'Analyse non disponible',
+            'analyse': 'Analyse non disponible',
+            'justification': "Erreur lors de l'analyse",
         }
 
     def qualify_dataframe(self, df: pd.DataFrame) -> pd.DataFrame:
-        """Qualifie toutes les entreprises avec recherche web + scoring IA"""
-        print("\n Qualification IA + Recherche web des prospects...\n")
+        """Qualifie toutes les entreprises (rapide, ~3s par entreprise)"""
+        print("\n Qualification IA des prospects...\n")
 
         qualified_data = []
-        batch_size = self.web_search_config['batch_size']
-        delay = self.web_search_config['delay_between_qualifications']
-        batch_pause = self.web_search_config['batch_pause']
+        delay = config.QUALIFIER_CONFIG['delay_between_calls']
 
-        for idx, row in tqdm(df.iterrows(), total=len(df), desc="Qualification"):
-            company_data = row.to_dict()
-
-            # Analyse IA avec recherche web
-            analysis = self.analyze_company(company_data)
-
-            # Fusionne les données
-            qualified_row = {**company_data, **analysis}
-
-            # Merge web search : email
-            if not qualified_row.get('email') and qualified_row.get('email_found'):
-                qualified_row['email'] = qualified_row['email_found']
-
-            # Merge web search : site web
-            if not qualified_row.get('site_web') and qualified_row.get('site_web_found'):
-                qualified_row['site_web'] = qualified_row['site_web_found']
-
-            # Merge web search : évolution CA
-            if not qualified_row.get('evolution_ca') and analysis.get('evolution_ca'):
-                qualified_row['evolution_ca'] = analysis['evolution_ca']
-
-            # Merge web search : dirigeant enrichi
-            if qualified_row.get('dirigeant_info') and qualified_row['dirigeant_info'] != 'Non trouvé':
-                qualified_row['dirigeant_enrichi'] = qualified_row['dirigeant_info']
-
+        for idx, row in tqdm(df.iterrows(), total=len(df), desc="Qualification IA"):
+            analysis = self.analyze_company(row.to_dict())
+            qualified_row = {**row.to_dict(), **analysis}
             qualified_data.append(qualified_row)
-
-            # Rate limiting
             time.sleep(delay)
-            if (idx + 1) % batch_size == 0:
-                time.sleep(batch_pause)
 
         qualified_df = pd.DataFrame(qualified_data)
 
@@ -270,163 +142,171 @@ Réponds UNIQUEMENT en JSON valide, sans aucun texte avant ou après le JSON."""
         qualified_df = qualified_df.sort_values('score_order').drop('score_order', axis=1)
 
         print(f"\n {len(qualified_df)} prospects qualifiés")
-        print("\n Répartition des scores:")
         print(qualified_df['score'].value_counts().sort_index())
 
         return qualified_df
 
-    def format_excel_output(self, df: pd.DataFrame, output_file: str):
-        """Formate et exporte le fichier Excel final avec 18 colonnes"""
+    def format_excel_output(self, df: pd.DataFrame, output_file: str = None) -> bytes:
+        """Formate le fichier Excel professionnel. Retourne les bytes du fichier."""
 
         df_export = df.copy()
 
-        # Prépare CA en M€
+        # CA en M€
         if 'ca_euros' in df_export.columns:
-            df_export['ca_m_euros'] = df_export['ca_euros'].apply(
+            df_export['ca_m'] = df_export['ca_euros'].apply(
                 lambda x: round(x / 1_000_000, 2) if pd.notna(x) and isinstance(x, (int, float)) else None
             )
 
-        # Formate résultat net
+        # Résultat net en M€
         if 'resultat_euros' in df_export.columns:
-            df_export['resultat_m_euros'] = df_export['resultat_euros'].apply(
-                lambda x: f"{x/1_000_000:.2f}" if pd.notna(x) and isinstance(x, (int, float)) else 'N/A'
+            df_export['resultat_m'] = df_export['resultat_euros'].apply(
+                lambda x: round(x / 1_000_000, 2) if pd.notna(x) and isinstance(x, (int, float)) else None
             )
 
-        # Construit la colonne secteur (meilleure source disponible)
-        if 'secteur' not in df_export.columns:
-            if 'libelle_naf' in df_export.columns:
-                df_export['secteur'] = df_export['libelle_naf']
-            elif 'activite_desc' in df_export.columns:
-                df_export['secteur'] = df_export['activite_desc']
-            else:
-                df_export['secteur'] = ''
+        # Dirigeant : meilleure source
+        df_export['dirigeant_final'] = df_export.apply(
+            lambda r: r.get('dirigeant_enrichi') or r.get('dirigeant_principal') or '', axis=1
+        )
 
-        # Construit la colonne dirigeant (meilleure source disponible)
-        if 'dirigeant' not in df_export.columns:
-            if 'dirigeant_enrichi' in df_export.columns:
-                df_export['dirigeant'] = df_export['dirigeant_enrichi']
-            elif 'dirigeant_principal' in df_export.columns:
-                df_export['dirigeant'] = df_export['dirigeant_principal']
-            else:
-                df_export['dirigeant'] = ''
+        # Secteur : meilleure source
+        df_export['secteur_final'] = df_export.apply(
+            lambda r: r.get('libelle_naf') or r.get('activite_desc') or '', axis=1
+        )
 
-        # Construit adresse_complete si absente
+        # Adresse complète
         if 'adresse_complete' not in df_export.columns:
             df_export['adresse_complete'] = df_export.apply(
                 lambda r: f"{r.get('adresse', '')}, {r.get('code_postal', '')} {r.get('ville', '')}".strip(', '),
                 axis=1
             )
 
-        # 18 colonnes dans l'ordre exact demandé
-        column_mapping = {
-            'score': 'Score',
-            'score_label': 'Score Label',
-            'nom_entreprise': 'Nom entreprise',
-            'ca_m_euros': 'CA (M€)',
-            'evolution_ca': 'Évolution CA',
-            'resultat_m_euros': 'Résultat net',
-            'secteur': 'Secteur',
-            'dirigeant': 'Dirigeant',
-            'telephone': 'Téléphone',
-            'email': 'Email',
-            'site_web': 'Site web',
-            'adresse_complete': 'Adresse complète',
-            'ville': 'Ville',
-            'region': 'Région',
-            'resume_business': 'Résumé business',
-            'signaux_ma': 'Signaux M&A',
-            'analyse_fit': 'Analyse corporate fit',
-            'justification': 'Justification du score',
-        }
+        # Colonnes dans l'ordre avec noms français professionnels
+        column_map = [
+            ('score', 'Score'),
+            ('score_label', 'Qualification'),
+            ('nom_entreprise', 'Entreprise'),
+            ('ca_m', "Chiffre d'Affaires (M€)"),
+            ('evolution_ca', 'Évolution CA'),
+            ('resultat_m', 'Résultat Net (M€)'),
+            ('secteur_final', "Secteur d'Activité"),
+            ('dirigeant_final', 'Dirigeant Principal'),
+            ('telephone', 'Téléphone'),
+            ('email', 'Email'),
+            ('site_web', 'Site Web'),
+            ('adresse_complete', 'Adresse du Siège'),
+            ('ville', 'Ville'),
+            ('region', 'Région'),
+            ('tranche_effectif', 'Effectif'),
+            ('date_creation', 'Date de Création'),
+            ('forme_juridique', 'Forme Juridique'),
+            ('siren', 'SIREN'),
+            ('resume', 'Résumé Activité'),
+            ('analyse', 'Analyse M&A'),
+            ('justification', 'Justification Score'),
+        ]
 
-        # Sélectionne et renomme les colonnes
-        final_columns = []
-        rename_map = {}
-        for col_key, col_label in column_mapping.items():
+        # Construit le DataFrame final
+        final_cols = []
+        rename = {}
+        for col_key, col_label in column_map:
             if col_key not in df_export.columns:
                 df_export[col_key] = ''
-            final_columns.append(col_key)
-            rename_map[col_key] = col_label
+            final_cols.append(col_key)
+            rename[col_key] = col_label
 
-        df_final = df_export[final_columns].rename(columns=rename_map)
+        df_final = df_export[final_cols].rename(columns=rename)
 
-        # Export Excel avec formatage
-        with pd.ExcelWriter(output_file, engine='xlsxwriter') as writer:
+        # Écrit dans un buffer (ou fichier)
+        buffer = BytesIO()
+        target = output_file if output_file else buffer
+
+        with pd.ExcelWriter(target, engine='xlsxwriter') as writer:
             df_final.to_excel(writer, sheet_name='Prospects', index=False)
 
-            workbook = writer.book
-            worksheet = writer.sheets['Prospects']
+            wb = writer.book
+            ws = writer.sheets['Prospects']
 
-            # Format header
-            header_format = workbook.add_format({
-                'bold': True,
-                'bg_color': '#4472C4',
-                'font_color': 'white',
-                'border': 1,
-                'text_wrap': True,
-                'valign': 'vcenter',
+            # --- FORMATS ---
+            header_fmt = wb.add_format({
+                'bold': True, 'bg_color': '#1a1a2e', 'font_color': '#e0e0e0',
+                'border': 1, 'text_wrap': True, 'valign': 'vcenter',
+                'font_name': 'Calibri', 'font_size': 10,
             })
-
-            # Formats par score
-            score_formats = {
-                'A': workbook.add_format({'bg_color': '#C6EFCE', 'bold': True, 'border': 1}),
-                'B': workbook.add_format({'bg_color': '#FFEB9C', 'border': 1}),
-                'C': workbook.add_format({'bg_color': '#FFC7CE', 'border': 1}),
-                'D': workbook.add_format({'bg_color': '#CCCCCC', 'border': 1}),
+            money_fmt = wb.add_format({
+                'num_format': '#,##0.00', 'border': 1,
+                'font_name': 'Calibri', 'font_size': 10,
+            })
+            cell_fmt = wb.add_format({
+                'border': 1, 'text_wrap': True, 'valign': 'vcenter',
+                'font_name': 'Calibri', 'font_size': 10,
+            })
+            score_fmts = {
+                'A': wb.add_format({
+                    'bold': True, 'bg_color': '#27ae60', 'font_color': 'white',
+                    'border': 1, 'align': 'center', 'font_name': 'Calibri', 'font_size': 11,
+                }),
+                'B': wb.add_format({
+                    'bold': True, 'bg_color': '#f39c12', 'font_color': 'white',
+                    'border': 1, 'align': 'center', 'font_name': 'Calibri', 'font_size': 11,
+                }),
+                'C': wb.add_format({
+                    'bold': True, 'bg_color': '#e74c3c', 'font_color': 'white',
+                    'border': 1, 'align': 'center', 'font_name': 'Calibri', 'font_size': 11,
+                }),
+                'D': wb.add_format({
+                    'bold': True, 'bg_color': '#7f8c8d', 'font_color': 'white',
+                    'border': 1, 'align': 'center', 'font_name': 'Calibri', 'font_size': 11,
+                }),
             }
 
-            # Écrit les headers
+            # --- HEADERS ---
             for col_num, value in enumerate(df_final.columns.values):
-                worksheet.write(0, col_num, value, header_format)
+                ws.write(0, col_num, value, header_fmt)
 
-            # Applique les couleurs selon le score
-            for row_num in range(1, len(df_final) + 1):
-                score = df_final.iloc[row_num - 1].iloc[0]
-                fmt = score_formats.get(score, score_formats['D'])
-                worksheet.write(row_num, 0, score, fmt)
+            # --- DATA avec formatage ---
+            for row_num in range(len(df_final)):
+                row_data = df_final.iloc[row_num]
 
-            # Largeurs de colonnes (18 colonnes)
-            widths = [8, 35, 30, 10, 20, 12, 25, 25, 15, 25, 30, 35, 15, 20, 40, 30, 40, 40]
-            for i, w in enumerate(widths):
-                worksheet.set_column(i, i, w)
+                for col_num, col_name in enumerate(df_final.columns):
+                    val = row_data.iloc[col_num]
 
-            # Fige la ligne d'en-tête
-            worksheet.freeze_panes(1, 0)
+                    # Score : couleur
+                    if col_num == 0:
+                        fmt = score_fmts.get(val, score_fmts['D'])
+                        ws.write(row_num + 1, col_num, val, fmt)
+                    # CA et Résultat : format monétaire
+                    elif col_name in ["Chiffre d'Affaires (M€)", "Résultat Net (M€)"]:
+                        if pd.notna(val) and val != '':
+                            ws.write_number(row_num + 1, col_num, float(val), money_fmt)
+                        else:
+                            ws.write(row_num + 1, col_num, '', cell_fmt)
+                    else:
+                        ws.write(row_num + 1, col_num, str(val) if pd.notna(val) else '', cell_fmt)
 
-            # Auto-filtre
-            worksheet.autofilter(0, 0, len(df_final), len(df_final.columns) - 1)
+            # --- LARGEURS ---
+            widths = {
+                'Score': 7, 'Qualification': 30, 'Entreprise': 35,
+                "Chiffre d'Affaires (M€)": 18, 'Évolution CA': 30,
+                'Résultat Net (M€)': 16, "Secteur d'Activité": 30,
+                'Dirigeant Principal': 25, 'Téléphone': 14, 'Email': 25,
+                'Site Web': 25, 'Adresse du Siège': 35, 'Ville': 15,
+                'Région': 18, 'Effectif': 18, 'Date de Création': 14,
+                'Forme Juridique': 14, 'SIREN': 12,
+                'Résumé Activité': 40, 'Analyse M&A': 40,
+                'Justification Score': 35,
+            }
+            for col_num, col_name in enumerate(df_final.columns):
+                ws.set_column(col_num, col_num, widths.get(col_name, 15))
 
-        print(f"\n Fichier Excel final créé: {output_file}")
+            # Fige header + auto-filtre
+            ws.freeze_panes(1, 0)
+            ws.autofilter(0, 0, len(df_final), len(df_final.columns) - 1)
 
+            # Hauteur header
+            ws.set_row(0, 30)
 
-def main():
-    """Test du qualifier"""
-    import glob
-    import os
-    from datetime import datetime
+        if output_file:
+            with open(output_file, 'rb') as f:
+                return f.read()
 
-    if not config.ANTHROPIC_API_KEY or config.ANTHROPIC_API_KEY == "sk-ant-xxxxx":
-        print("ERREUR: Configure ta clé API Anthropic dans config.py")
-        print("   Obtiens-la sur: https://console.anthropic.com/")
-        return
-
-    files = glob.glob("outputs/enriched_*.xlsx")
-    if not files:
-        print("Aucun fichier enrichi trouvé. Lance enricher.py d'abord")
-        return
-
-    latest = max(files, key=os.path.getctime)
-    print(f"Chargement: {latest}")
-
-    df = pd.read_excel(latest)
-
-    qualifier = ProspectQualifier(config.ANTHROPIC_API_KEY)
-    qualified_df = qualifier.qualify_dataframe(df)
-
-    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    output_file = f"outputs/prospects_qualified_{timestamp}.xlsx"
-    qualifier.format_excel_output(qualified_df, output_file)
-
-
-if __name__ == "__main__":
-    main()
+        return buffer.getvalue()
