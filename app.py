@@ -11,7 +11,7 @@ import os
 
 from scraper import DataGouvScraper, TRANCHES_PME
 from enricher import SocieteEnricher
-from qualifier import ProspectQualifier
+from qualifier import AutoScorer, ProspectQualifier, format_excel_output
 import config
 
 st.set_page_config(
@@ -349,18 +349,17 @@ def search_tab():
 
         limit = st.number_input("Nombre d'entreprises", min_value=1, max_value=500, value=20)
 
-    # ─── Qualification toggle (visible) ───
+    # ─── Qualification ───
     st.markdown("")
-    enable_qualification = st.toggle(
-        "Qualification IA (scoring A/B/C/D)",
-        value=True,
-        help="Analyse avec Claude AI. Ajoute ~30s pour 10 entreprises. Score les prospects selon leur potentiel M&A."
+    enable_ia = st.toggle(
+        "Qualification IA avancee (Claude)",
+        value=False,
+        help="Par defaut : scoring automatique par regles. Active l'IA pour une analyse plus riche (~3s/entreprise)."
     )
-    skip_qualification = not enable_qualification
 
-    # ─── API key (appears when qualification is enabled) ───
+    # ─── API key (appears when IA is enabled) ───
     api_key = ""
-    if enable_qualification:
+    if enable_ia:
         api_key = st.text_input(
             "Cle API Anthropic",
             value=config.ANTHROPIC_API_KEY or "",
@@ -390,12 +389,12 @@ def search_tab():
                 region_code=region_code, secteur_code=secteur_code,
                 forme_code=forme_code, age_min=age_min, limit=limit,
                 api_key=api_key, skip_enrichment=skip_enrichment,
-                skip_qualification=skip_qualification, filters_text=filters_text,
+                enable_ia=enable_ia, filters_text=filters_text,
             )
 
 
 def run_pipeline(ca_min, ca_max, region_code, secteur_code, forme_code,
-                 age_min, limit, api_key, skip_enrichment, skip_qualification,
+                 age_min, limit, api_key, skip_enrichment, enable_ia,
                  filters_text):
 
     os.makedirs("outputs", exist_ok=True)
@@ -416,8 +415,8 @@ def run_pipeline(ca_min, ca_max, region_code, secteur_code, forme_code,
     status = st.empty()
 
     try:
-        # 1 — Scraping
-        status.markdown("**Recherche sur data.gouv.fr...**")
+        # 1 — Scraping (API fournit CA + age dirigeant + resultat net)
+        status.markdown("**Recherche sur data.gouv.fr (CA, dirigeants, finances)...**")
         progress.progress(10)
         scraper = DataGouvScraper()
         companies = scraper.search_companies(filtres)
@@ -428,53 +427,57 @@ def run_pipeline(ca_min, ca_max, region_code, secteur_code, forme_code,
 
         df = scraper.to_dataframe(companies)
         progress.progress(25)
-        st.success(f"{len(df)} entreprises trouvees")
 
-        # 2 — Enrichissement
+        # Stats API
+        ca_filled = df['ca_euros'].notna().sum()
+        age_filled = df['age_dirigeant'].notna().sum()
+        st.success(f"{len(df)} entreprises trouvees (CA: {ca_filled}/{len(df)}, Age dirigeant: {age_filled}/{len(df)})")
+
+        # 2 — Enrichissement Societe.com (telephone, email, site web, tendance CA)
         if not skip_enrichment:
-            status.markdown("**Enrichissement Societe.com...**")
+            status.markdown("**Enrichissement Societe.com (tel, email, site web)...**")
             progress.progress(30)
             enricher = SocieteEnricher()
             df = enricher.enrich_dataframe(df, filter_ca=True, target_limit=limit)
             progress.progress(55)
             st.success(f"{len(df)} entreprises enrichies")
         else:
+            # Filtre CA manuellement si pas d'enrichissement
+            before = len(df)
+            df = df[
+                (df['ca_euros'].isna()) |
+                ((df['ca_euros'] >= ca_min) & (df['ca_euros'] <= ca_max))
+            ].copy()
+            if len(df) > limit:
+                df = df.head(limit)
             progress.progress(55)
 
-        # 3 — Qualification IA
-        if not skip_qualification:
-            if not api_key:
-                st.warning("Cle API manquante — qualification sautee")
-                skip_qualification = True
-            else:
-                status.markdown("**Qualification IA...**")
-                progress.progress(60)
-                qualifier = ProspectQualifier(api_key)
-                df = qualifier.qualify_dataframe(df)
-                progress.progress(90)
-                st.success("Prospects qualifies")
+        # 3 — Scoring
+        if enable_ia and api_key:
+            # Qualification IA avancee
+            status.markdown("**Qualification IA (Claude)...**")
+            progress.progress(60)
+            qualifier = ProspectQualifier(api_key)
+            df = qualifier.qualify_dataframe(df)
+            progress.progress(90)
+            st.success("Prospects qualifies par IA")
+        else:
+            # Scoring automatique par regles
+            status.markdown("**Scoring automatique...**")
+            progress.progress(60)
+            scorer = AutoScorer()
+            df = scorer.score_dataframe(df)
+            progress.progress(90)
+            st.success("Prospects scores automatiquement")
 
-                # 4 — Export
-                status.markdown("**Generation Excel...**")
-                excel_bytes = qualifier.format_excel_output(df)
-                filename = f"prospects_{timestamp}.xlsx"
-                progress.progress(100)
-                status.empty()
-
-                save_to_history(timestamp, filters_text, df, excel_bytes, filename, qualified=True)
-                show_results(df, excel_bytes, filename)
-                return
-
-        # Without qualification
-        progress.progress(90)
-        buf = BytesIO()
-        df.to_excel(buf, index=False, engine='xlsxwriter')
-        excel_bytes = buf.getvalue()
+        # 4 — Export Excel
+        status.markdown("**Generation Excel...**")
+        excel_bytes = format_excel_output(df)
         filename = f"prospects_{timestamp}.xlsx"
         progress.progress(100)
         status.empty()
 
-        save_to_history(timestamp, filters_text, df, excel_bytes, filename, qualified=False)
+        save_to_history(timestamp, filters_text, df, excel_bytes, filename, qualified=enable_ia)
         show_results(df, excel_bytes, filename)
 
     except Exception as e:

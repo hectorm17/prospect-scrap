@@ -249,6 +249,9 @@ class DataGouvScraper:
                 siege = company.get('siege', {})
                 tranche_code = company.get('tranche_effectif_salarie', '')
 
+                # Finances (API fournit ca + resultat_net par année)
+                ca_euros, resultat_euros = self._extract_finances(company)
+
                 row = {
                     'nom_entreprise': company.get('nom_complet', ''),
                     'siren': company.get('siren', ''),
@@ -260,6 +263,10 @@ class DataGouvScraper:
                     'tranche_effectif': TRANCHES_EFFECTIF.get(tranche_code, tranche_code),
                     'categorie': company.get('categorie_entreprise', ''),
 
+                    # Finances (directement depuis l'API)
+                    'ca_euros': ca_euros,
+                    'resultat_euros': resultat_euros,
+
                     # Adresse siège
                     'adresse': siege.get('adresse', ''),
                     'code_postal': siege.get('code_postal', ''),
@@ -268,9 +275,9 @@ class DataGouvScraper:
                     'region': siege.get('region', ''),
                     'adresse_complete': self._build_complete_address(siege),
 
-                    # Dirigeant
+                    # Dirigeant + âge (directement depuis l'API)
                     'dirigeant_principal': self._extract_dirigeant(company),
-                    'age_dirigeant_api': self._extract_age_dirigeant(company),
+                    'age_dirigeant': self._extract_age_dirigeant(company),
 
                     # Liens
                     'url_pappers': f"https://www.pappers.fr/entreprise/{company.get('siren', '')}",
@@ -310,6 +317,20 @@ class DataGouvScraper:
             return ""
         except Exception:
             return ""
+
+    def _extract_finances(self, company: Dict) -> tuple:
+        """Extrait CA et résultat net depuis finances de l'API (année la plus récente)"""
+        try:
+            finances = company.get('finances', {})
+            if not finances:
+                return None, None
+            latest_year = max(finances.keys())
+            year_data = finances[latest_year]
+            ca = year_data.get('ca')
+            resultat = year_data.get('resultat_net')
+            return ca, resultat
+        except Exception:
+            return None, None
 
     def _extract_age_dirigeant(self, company: Dict) -> Optional[int]:
         """Extrait l'âge du dirigeant depuis date_de_naissance de l'API (format: '1972-12')"""

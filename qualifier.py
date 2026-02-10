@@ -1,6 +1,7 @@
 """
-Qualification des prospects avec Claude (Anthropic API)
-Score A/B/C/D basé sur les données scrapées - PAS de recherche web (rapide)
+Qualification des prospects :
+- AutoScorer : scoring automatique par règles (rapide, sans IA)
+- ProspectQualifier : scoring IA avec Claude (optionnel, plus riche)
 """
 
 import anthropic
@@ -8,10 +9,138 @@ import pandas as pd
 from io import BytesIO
 from typing import Dict
 from tqdm import tqdm
+from datetime import datetime
 import time
 import json
 import re
 import config
+
+
+class AutoScorer:
+    """Scoring automatique basé sur des critères objectifs (pas d'IA)"""
+
+    def score_company(self, company: Dict) -> Dict:
+        """Score une entreprise sur critères objectifs → A/B/C/D"""
+        points = 0
+        justifications = []
+
+        # Critère 1 : CA (30 points max)
+        ca = company.get('ca_euros')
+        if ca and isinstance(ca, (int, float)) and pd.notna(ca) and ca > 0:
+            ca_m = ca / 1_000_000
+            if 10 <= ca_m <= 30:
+                points += 30
+                justifications.append(f"CA optimal ({ca_m:.1f}M)")
+            elif 5 <= ca_m < 10 or 30 < ca_m <= 50:
+                points += 20
+                justifications.append(f"CA correct ({ca_m:.1f}M)")
+            elif ca_m > 50:
+                points += 10
+                justifications.append(f"CA > 50M ({ca_m:.0f}M)")
+            else:
+                points += 5
+                justifications.append(f"CA faible ({ca_m:.1f}M)")
+        else:
+            justifications.append("CA inconnu")
+
+        # Critère 2 : Age dirigeant (25 points max)
+        age = company.get('age_dirigeant')
+        if age and isinstance(age, (int, float)) and pd.notna(age):
+            age = int(age)
+            if age >= 55:
+                points += 25
+                justifications.append(f"Dirigeant {age} ans (transmission)")
+            elif 45 <= age < 55:
+                points += 15
+                justifications.append(f"Dirigeant {age} ans")
+            else:
+                points += 5
+                justifications.append(f"Dirigeant {age} ans (jeune)")
+        else:
+            justifications.append("Age dirigeant inconnu")
+
+        # Critère 3 : Forme juridique (15 points max)
+        forme = str(company.get('forme_juridique', ''))
+        if '5710' in forme or 'SAS' in forme:
+            points += 15
+            justifications.append("SAS")
+        elif '5499' in forme or 'SARL' in forme:
+            points += 15
+            justifications.append("SARL")
+        elif '55' in forme[:2] if len(forme) >= 2 else False:
+            points += 10
+            justifications.append("SA")
+
+        # Critère 4 : Age entreprise (15 points max)
+        date_creation = company.get('date_creation', '')
+        if date_creation and len(date_creation) >= 4:
+            try:
+                year = int(date_creation[:4])
+                age_ent = datetime.now().year - year
+                if 10 <= age_ent <= 30:
+                    points += 15
+                    justifications.append(f"Entreprise mature ({age_ent} ans)")
+                elif 5 <= age_ent < 10:
+                    points += 10
+                    justifications.append(f"Entreprise etablie ({age_ent} ans)")
+                elif age_ent > 30:
+                    points += 8
+                    justifications.append(f"Entreprise ancienne ({age_ent} ans)")
+            except ValueError:
+                pass
+
+        # Critère 5 : Rentabilite (15 points max)
+        resultat = company.get('resultat_euros')
+        if resultat and isinstance(resultat, (int, float)) and pd.notna(resultat):
+            if resultat > 0:
+                points += 15
+                justifications.append(f"Rentable ({resultat/1e6:.1f}M)")
+            else:
+                points += 3
+                justifications.append(f"Deficitaire ({resultat/1e6:.1f}M)")
+
+        # Attribution du score
+        if points >= 75:
+            score = "A"
+            label = "Prospect prioritaire"
+        elif points >= 55:
+            score = "B"
+            label = "Prospect interessant"
+        elif points >= 35:
+            score = "C"
+            label = "Prospect secondaire"
+        else:
+            score = "D"
+            label = "Hors cible"
+
+        return {
+            'score': score,
+            'score_label': label,
+            'justification': " | ".join(justifications),
+            'resume': company.get('libelle_naf', ''),
+            'analyse': '',
+        }
+
+    def score_dataframe(self, df: pd.DataFrame) -> pd.DataFrame:
+        """Score toutes les entreprises automatiquement"""
+        print("\n[Scoring] Qualification automatique...")
+
+        scored_data = []
+        for _, row in df.iterrows():
+            scoring = self.score_company(row.to_dict())
+            scored_data.append({**row.to_dict(), **scoring})
+
+        scored_df = pd.DataFrame(scored_data)
+
+        # Tri par score
+        score_order = {'A': 0, 'B': 1, 'C': 2, 'D': 3}
+        scored_df['score_order'] = scored_df['score'].map(score_order)
+        scored_df = scored_df.sort_values('score_order').drop('score_order', axis=1)
+
+        print(f"[OK] {len(scored_df)} prospects scores")
+        print(scored_df['score'].value_counts().sort_index())
+
+        return scored_df
 
 
 class ProspectQualifier:
@@ -152,168 +281,158 @@ Réponds UNIQUEMENT en JSON :
         return qualified_df
 
     def format_excel_output(self, df: pd.DataFrame, output_file: str = None) -> bytes:
-        """Formate le fichier Excel professionnel. Retourne les bytes du fichier."""
+        return format_excel_output(df, output_file)
 
-        df_export = df.copy()
 
-        # CA en M€
-        if 'ca_euros' in df_export.columns:
-            df_export['ca_m'] = df_export['ca_euros'].apply(
-                lambda x: round(x / 1_000_000, 2) if pd.notna(x) and isinstance(x, (int, float)) else None
-            )
+def format_excel_output(df: pd.DataFrame, output_file: str = None) -> bytes:
+    """Formate le fichier Excel professionnel. Retourne les bytes du fichier."""
 
-        # Résultat net en M€
-        if 'resultat_euros' in df_export.columns:
-            df_export['resultat_m'] = df_export['resultat_euros'].apply(
-                lambda x: round(x / 1_000_000, 2) if pd.notna(x) and isinstance(x, (int, float)) else None
-            )
+    df_export = df.copy()
 
-        # Dirigeant : meilleure source
-        df_export['dirigeant_final'] = df_export.apply(
-            lambda r: r.get('dirigeant_enrichi') or r.get('dirigeant_principal') or '', axis=1
+    # CA en M
+    if 'ca_euros' in df_export.columns:
+        df_export['ca_m'] = df_export['ca_euros'].apply(
+            lambda x: round(x / 1_000_000, 2) if pd.notna(x) and isinstance(x, (int, float)) else None
         )
 
-        # Secteur : meilleure source
-        df_export['secteur_final'] = df_export.apply(
-            lambda r: r.get('libelle_naf') or r.get('activite_desc') or '', axis=1
+    # Resultat net en M
+    if 'resultat_euros' in df_export.columns:
+        df_export['resultat_m'] = df_export['resultat_euros'].apply(
+            lambda x: round(x / 1_000_000, 2) if pd.notna(x) and isinstance(x, (int, float)) else None
         )
 
-        # Adresse complète
-        if 'adresse_complete' not in df_export.columns:
-            df_export['adresse_complete'] = df_export.apply(
-                lambda r: f"{r.get('adresse', '')}, {r.get('code_postal', '')} {r.get('ville', '')}".strip(', '),
-                axis=1
-            )
+    # Dirigeant : meilleure source
+    df_export['dirigeant_final'] = df_export.apply(
+        lambda r: r.get('dirigeant_enrichi') or r.get('dirigeant_principal') or '', axis=1
+    )
 
-        # Colonnes dans l'ordre avec noms français professionnels
-        column_map = [
-            ('score', 'Score'),
-            ('score_label', 'Qualification'),
-            ('nom_entreprise', 'Entreprise'),
-            ('ca_m', "Chiffre d'Affaires (M€)"),
-            ('evolution_ca', 'Évolution CA'),
-            ('resultat_m', 'Résultat Net (M€)'),
-            ('secteur_final', "Secteur d'Activité"),
-            ('dirigeant_final', 'Dirigeant Principal'),
-            ('age_dirigeant', 'Âge Dirigeant'),
-            ('telephone', 'Téléphone'),
-            ('email', 'Email'),
-            ('site_web', 'Site Web'),
-            ('adresse_complete', 'Adresse du Siège'),
-            ('ville', 'Ville'),
-            ('region', 'Région'),
-            ('tranche_effectif', 'Effectif'),
-            ('date_creation', 'Date de Création'),
-            ('forme_juridique', 'Forme Juridique'),
-            ('siren', 'SIREN'),
-            ('url_pappers', 'Fiche Pappers'),
-            ('resume', 'Résumé Activité'),
-            ('analyse', 'Analyse M&A'),
-            ('justification', 'Justification Score'),
-        ]
+    # Secteur : meilleure source
+    df_export['secteur_final'] = df_export.apply(
+        lambda r: r.get('libelle_naf') or r.get('activite_desc') or '', axis=1
+    )
 
-        # Construit le DataFrame final
-        final_cols = []
-        rename = {}
-        for col_key, col_label in column_map:
-            if col_key not in df_export.columns:
-                df_export[col_key] = ''
-            final_cols.append(col_key)
-            rename[col_key] = col_label
+    # Adresse complete
+    if 'adresse_complete' not in df_export.columns:
+        df_export['adresse_complete'] = df_export.apply(
+            lambda r: f"{r.get('adresse', '')}, {r.get('code_postal', '')} {r.get('ville', '')}".strip(', '),
+            axis=1
+        )
 
-        df_final = df_export[final_cols].rename(columns=rename)
+    column_map = [
+        ('score', 'Score'),
+        ('score_label', 'Qualification'),
+        ('nom_entreprise', 'Entreprise'),
+        ('ca_m', "Chiffre d'Affaires (M)"),
+        ('evolution_ca', 'Evolution CA'),
+        ('resultat_m', 'Resultat Net (M)'),
+        ('secteur_final', "Secteur d'Activite"),
+        ('dirigeant_final', 'Dirigeant Principal'),
+        ('age_dirigeant', 'Age Dirigeant'),
+        ('telephone', 'Telephone'),
+        ('email', 'Email'),
+        ('site_web', 'Site Web'),
+        ('adresse_complete', 'Adresse du Siege'),
+        ('ville', 'Ville'),
+        ('region', 'Region'),
+        ('tranche_effectif', 'Effectif'),
+        ('date_creation', 'Date de Creation'),
+        ('forme_juridique', 'Forme Juridique'),
+        ('siren', 'SIREN'),
+        ('url_pappers', 'Fiche Pappers'),
+        ('resume', 'Resume Activite'),
+        ('analyse', 'Analyse M&A'),
+        ('justification', 'Justification Score'),
+    ]
 
-        # Écrit dans un buffer (ou fichier)
-        buffer = BytesIO()
-        target = output_file if output_file else buffer
+    final_cols = []
+    rename = {}
+    for col_key, col_label in column_map:
+        if col_key not in df_export.columns:
+            df_export[col_key] = ''
+        final_cols.append(col_key)
+        rename[col_key] = col_label
 
-        with pd.ExcelWriter(target, engine='xlsxwriter') as writer:
-            df_final.to_excel(writer, sheet_name='Prospects', index=False)
+    df_final = df_export[final_cols].rename(columns=rename)
 
-            wb = writer.book
-            ws = writer.sheets['Prospects']
+    buffer = BytesIO()
+    target = output_file if output_file else buffer
 
-            # --- FORMATS ---
-            header_fmt = wb.add_format({
-                'bold': True, 'bg_color': '#1a1a2e', 'font_color': '#e0e0e0',
-                'border': 1, 'text_wrap': True, 'valign': 'vcenter',
-                'font_name': 'Calibri', 'font_size': 10,
-            })
-            money_fmt = wb.add_format({
-                'num_format': '#,##0.00', 'border': 1,
-                'font_name': 'Calibri', 'font_size': 10,
-            })
-            cell_fmt = wb.add_format({
-                'border': 1, 'text_wrap': True, 'valign': 'vcenter',
-                'font_name': 'Calibri', 'font_size': 10,
-            })
-            score_fmts = {
-                'A': wb.add_format({
-                    'bold': True, 'bg_color': '#27ae60', 'font_color': 'white',
-                    'border': 1, 'align': 'center', 'font_name': 'Calibri', 'font_size': 11,
-                }),
-                'B': wb.add_format({
-                    'bold': True, 'bg_color': '#f39c12', 'font_color': 'white',
-                    'border': 1, 'align': 'center', 'font_name': 'Calibri', 'font_size': 11,
-                }),
-                'C': wb.add_format({
-                    'bold': True, 'bg_color': '#e74c3c', 'font_color': 'white',
-                    'border': 1, 'align': 'center', 'font_name': 'Calibri', 'font_size': 11,
-                }),
-                'D': wb.add_format({
-                    'bold': True, 'bg_color': '#7f8c8d', 'font_color': 'white',
-                    'border': 1, 'align': 'center', 'font_name': 'Calibri', 'font_size': 11,
-                }),
-            }
+    with pd.ExcelWriter(target, engine='xlsxwriter') as writer:
+        df_final.to_excel(writer, sheet_name='Prospects', index=False)
 
-            # --- HEADERS ---
-            for col_num, value in enumerate(df_final.columns.values):
-                ws.write(0, col_num, value, header_fmt)
+        wb = writer.book
+        ws = writer.sheets['Prospects']
 
-            # --- DATA avec formatage ---
-            for row_num in range(len(df_final)):
-                row_data = df_final.iloc[row_num]
+        header_fmt = wb.add_format({
+            'bold': True, 'bg_color': '#1a1a2e', 'font_color': '#e0e0e0',
+            'border': 1, 'text_wrap': True, 'valign': 'vcenter',
+            'font_name': 'Calibri', 'font_size': 10,
+        })
+        money_fmt = wb.add_format({
+            'num_format': '#,##0.00', 'border': 1,
+            'font_name': 'Calibri', 'font_size': 10,
+        })
+        cell_fmt = wb.add_format({
+            'border': 1, 'text_wrap': True, 'valign': 'vcenter',
+            'font_name': 'Calibri', 'font_size': 10,
+        })
+        score_fmts = {
+            'A': wb.add_format({
+                'bold': True, 'bg_color': '#27ae60', 'font_color': 'white',
+                'border': 1, 'align': 'center', 'font_name': 'Calibri', 'font_size': 11,
+            }),
+            'B': wb.add_format({
+                'bold': True, 'bg_color': '#f39c12', 'font_color': 'white',
+                'border': 1, 'align': 'center', 'font_name': 'Calibri', 'font_size': 11,
+            }),
+            'C': wb.add_format({
+                'bold': True, 'bg_color': '#e74c3c', 'font_color': 'white',
+                'border': 1, 'align': 'center', 'font_name': 'Calibri', 'font_size': 11,
+            }),
+            'D': wb.add_format({
+                'bold': True, 'bg_color': '#7f8c8d', 'font_color': 'white',
+                'border': 1, 'align': 'center', 'font_name': 'Calibri', 'font_size': 11,
+            }),
+        }
 
-                for col_num, col_name in enumerate(df_final.columns):
-                    val = row_data.iloc[col_num]
+        for col_num, value in enumerate(df_final.columns.values):
+            ws.write(0, col_num, value, header_fmt)
 
-                    # Score : couleur
-                    if col_num == 0:
-                        fmt = score_fmts.get(val, score_fmts['D'])
-                        ws.write(row_num + 1, col_num, val, fmt)
-                    # CA et Résultat : format monétaire
-                    elif col_name in ["Chiffre d'Affaires (M€)", "Résultat Net (M€)"]:
-                        if pd.notna(val) and val != '':
-                            ws.write_number(row_num + 1, col_num, float(val), money_fmt)
-                        else:
-                            ws.write(row_num + 1, col_num, '', cell_fmt)
-                    else:
-                        ws.write(row_num + 1, col_num, str(val) if pd.notna(val) else '', cell_fmt)
-
-            # --- LARGEURS ---
-            widths = {
-                'Score': 7, 'Qualification': 30, 'Entreprise': 35,
-                "Chiffre d'Affaires (M€)": 18, 'Évolution CA': 22,
-                'Résultat Net (M€)': 16, "Secteur d'Activité": 30,
-                'Dirigeant Principal': 25, 'Âge Dirigeant': 12, 'Téléphone': 14, 'Email': 25,
-                'Site Web': 25, 'Adresse du Siège': 35, 'Ville': 15,
-                'Région': 18, 'Effectif': 18, 'Date de Création': 14,
-                'Forme Juridique': 14, 'SIREN': 12, 'Fiche Pappers': 40,
-                'Résumé Activité': 40, 'Analyse M&A': 40,
-                'Justification Score': 35,
-            }
+        for row_num in range(len(df_final)):
+            row_data = df_final.iloc[row_num]
             for col_num, col_name in enumerate(df_final.columns):
-                ws.set_column(col_num, col_num, widths.get(col_name, 15))
+                val = row_data.iloc[col_num]
+                if col_num == 0:
+                    fmt = score_fmts.get(val, score_fmts['D'])
+                    ws.write(row_num + 1, col_num, val, fmt)
+                elif col_name in ["Chiffre d'Affaires (M)", "Resultat Net (M)"]:
+                    if pd.notna(val) and val != '':
+                        ws.write_number(row_num + 1, col_num, float(val), money_fmt)
+                    else:
+                        ws.write(row_num + 1, col_num, '', cell_fmt)
+                else:
+                    ws.write(row_num + 1, col_num, str(val) if pd.notna(val) else '', cell_fmt)
 
-            # Fige header + auto-filtre
-            ws.freeze_panes(1, 0)
-            ws.autofilter(0, 0, len(df_final), len(df_final.columns) - 1)
+        widths = {
+            'Score': 7, 'Qualification': 30, 'Entreprise': 35,
+            "Chiffre d'Affaires (M)": 18, 'Evolution CA': 22,
+            'Resultat Net (M)': 16, "Secteur d'Activite": 30,
+            'Dirigeant Principal': 25, 'Age Dirigeant': 12, 'Telephone': 14, 'Email': 25,
+            'Site Web': 25, 'Adresse du Siege': 35, 'Ville': 15,
+            'Region': 18, 'Effectif': 18, 'Date de Creation': 14,
+            'Forme Juridique': 14, 'SIREN': 12, 'Fiche Pappers': 40,
+            'Resume Activite': 40, 'Analyse M&A': 40,
+            'Justification Score': 35,
+        }
+        for col_num, col_name in enumerate(df_final.columns):
+            ws.set_column(col_num, col_num, widths.get(col_name, 15))
 
-            # Hauteur header
-            ws.set_row(0, 30)
+        ws.freeze_panes(1, 0)
+        ws.autofilter(0, 0, len(df_final), len(df_final.columns) - 1)
+        ws.set_row(0, 30)
 
-        if output_file:
-            with open(output_file, 'rb') as f:
-                return f.read()
+    if output_file:
+        with open(output_file, 'rb') as f:
+            return f.read()
 
-        return buffer.getvalue()
+    return buffer.getvalue()
