@@ -45,6 +45,7 @@ class SocieteEnricher:
 
             return {
                 'ca_societe': self._extract_ca(soup),
+                'activite_declaree': self._extract_activite(soup),
                 'telephone': self._extract_telephone(soup),
                 'email': self._extract_email(soup),
                 'site_web': self._extract_website(soup),
@@ -87,6 +88,21 @@ class SocieteEnricher:
             return None
         except Exception:
             return None
+
+    def _extract_activite(self, soup: BeautifulSoup) -> str:
+        """Extrait l'activité principale déclarée depuis Societe.com"""
+        try:
+            for div in soup.find_all('div'):
+                text = div.get_text(strip=True)
+                if text.startswith('Activité principale déclarée'):
+                    desc = text.replace('Activité principale déclarée', '', 1).strip()
+                    desc = re.sub(r'\s+', ' ', desc)
+                    if len(desc) > 200:
+                        desc = desc[:200].rsplit(' ', 1)[0] + '...'
+                    return desc
+            return ""
+        except Exception:
+            return ""
 
     def _extract_telephone(self, soup: BeautifulSoup) -> str:
         """Extrait le numéro de téléphone"""
@@ -237,6 +253,7 @@ class SocieteEnricher:
         """Retourne un dict vide en cas d'erreur"""
         return {
             'ca_societe': None,
+            'activite_declaree': '',
             'telephone': '',
             'email': '',
             'site_web': '',

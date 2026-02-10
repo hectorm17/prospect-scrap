@@ -306,9 +306,9 @@ def format_excel_output(df: pd.DataFrame, output_file: str = None) -> bytes:
         lambda r: r.get('dirigeant_enrichi') or r.get('dirigeant_principal') or '', axis=1
     )
 
-    # Secteur : meilleure source
-    df_export['secteur_final'] = df_export.apply(
-        lambda r: r.get('libelle_naf') or r.get('activite_desc') or '', axis=1
+    # Activite : activite_declaree (Societe.com) sinon libelle NAF
+    df_export['activite_final'] = df_export.apply(
+        lambda r: r.get('activite_declaree') or r.get('libelle_naf') or '', axis=1
     )
 
     # Adresse complete
@@ -325,7 +325,7 @@ def format_excel_output(df: pd.DataFrame, output_file: str = None) -> bytes:
         ('ca_m', "Chiffre d'Affaires (M)"),
         ('evolution_ca', 'Evolution CA'),
         ('resultat_m', 'Resultat Net (M)'),
-        ('secteur_final', "Secteur d'Activite"),
+        ('activite_final', "Activite"),
         ('dirigeant_final', 'Dirigeant Principal'),
         ('age_dirigeant', 'Age Dirigeant'),
         ('telephone', 'Telephone'),
@@ -417,7 +417,7 @@ def format_excel_output(df: pd.DataFrame, output_file: str = None) -> bytes:
         widths = {
             'Score': 7, 'Qualification': 30, 'Entreprise': 35,
             "Chiffre d'Affaires (M)": 18, 'Evolution CA': 22,
-            'Resultat Net (M)': 16, "Secteur d'Activite": 30,
+            'Resultat Net (M)': 16, 'Activite': 50,
             'Dirigeant Principal': 25, 'Age Dirigeant': 12, 'Telephone': 14, 'Email': 25,
             'Site Web': 25, 'Adresse du Siege': 35, 'Ville': 15,
             'Region': 18, 'Effectif': 18, 'Date de Creation': 14,

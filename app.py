@@ -538,18 +538,22 @@ def show_results(df, excel_bytes, filename):
         lambda r: r.get('dirigeant_enrichi') or r.get('dirigeant_principal') or '', axis=1
     )
 
+    # Activite: activite_declaree (Societe.com) sinon libelle NAF
+    preview_df['activite'] = preview_df.apply(
+        lambda r: r.get('activite_declaree') or r.get('libelle_naf') or '', axis=1
+    )
+
     # Build preview columns
     cols_map = {
         'score': 'Score',
         'nom_entreprise': 'Entreprise',
+        'activite': 'Activite',
         'CA': 'CA',
         'evolution_ca': 'Tendance',
         'dirigeant': 'Dirigeant',
         'age_dirigeant': 'Age',
         'ville': 'Ville',
         'telephone': 'Tel',
-        'url_pappers': 'Pappers',
-        'url_datagouv': 'Data.gouv',
         'justification': 'Justification',
     }
     available = {k: v for k, v in cols_map.items() if k in preview_df.columns}
