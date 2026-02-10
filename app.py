@@ -1,6 +1,6 @@
 """
 Prospect Scraper B2B — Interface Streamlit
-Design SaaS moderne, clean et minimaliste
+Design SaaS moderne dark mode avec streamlit-shadcn-ui
 """
 
 import streamlit as st
@@ -8,6 +8,8 @@ import pandas as pd
 from datetime import datetime
 from io import BytesIO
 import os
+
+from streamlit_shadcn_ui import metric_card, badges
 
 from scraper import DataGouvScraper, TRANCHES_PME
 from enricher import SocieteEnricher
@@ -25,37 +27,31 @@ if 'search_history' not in st.session_state:
     st.session_state.search_history = []
 
 # ─────────────────────────────────────────────
-# CSS
+# CSS — Dark mode SaaS
 # ─────────────────────────────────────────────
 st.markdown("""
 <style>
-    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
 
-    /* Reset */
+    * { font-family: 'Inter', -apple-system, sans-serif !important; }
+
+    /* ─── Dark background ─── */
     .stApp {
-        background: #fafafa;
-        font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+        background: linear-gradient(180deg, #0f172a 0%, #1e293b 100%);
     }
 
-    /* ─── Header ─── */
-    .header {
-        padding: 2rem 0 1.5rem;
-        margin-bottom: 2rem;
+    /* ─── Hide branding ─── */
+    #MainMenu, footer, header { visibility: hidden; }
+
+    /* ─── Container ─── */
+    .block-container {
+        padding-top: 1rem;
+        max-width: 1200px;
     }
-    .header h1 {
-        font-size: 1.75rem;
-        font-weight: 700;
-        background: linear-gradient(135deg, #6366f1, #8b5cf6, #a855f7);
-        -webkit-background-clip: text;
-        -webkit-text-fill-color: transparent;
-        background-clip: text;
-        letter-spacing: -0.03em;
-        margin: 0;
-    }
-    .header p {
-        font-size: 0.875rem;
-        color: #6b7280;
-        margin: 0.25rem 0 0 0;
+
+    /* ─── Headings ─── */
+    h1, h2, h3, h4, h5, h6, p, span, label, div {
+        color: #e2e8f0;
     }
 
     /* ─── Section titles ─── */
@@ -64,17 +60,8 @@ st.markdown("""
         font-weight: 600;
         text-transform: uppercase;
         letter-spacing: 0.08em;
-        color: #9ca3af;
+        color: #64748b;
         margin: 1.5rem 0 0.75rem 0;
-    }
-
-    /* ─── Cards ─── */
-    .card {
-        background: #fff;
-        border: 1px solid #e5e7eb;
-        border-radius: 12px;
-        padding: 1.5rem;
-        margin-bottom: 1rem;
     }
 
     /* ─── Filter pills ─── */
@@ -87,88 +74,46 @@ st.markdown("""
     .pill {
         display: inline-flex;
         align-items: center;
-        background: #f3f4f6;
-        color: #374151;
+        background: rgba(99, 102, 241, 0.15);
+        color: #a5b4fc;
         padding: 0.3rem 0.75rem;
         border-radius: 100px;
         font-size: 0.75rem;
         font-weight: 500;
+        border: 1px solid rgba(99, 102, 241, 0.25);
     }
 
     /* ─── Score badges ─── */
-    .score-badge {
-        display: inline-flex;
-        align-items: center;
-        justify-content: center;
-        width: 28px;
-        height: 28px;
-        border-radius: 8px;
-        font-size: 0.8rem;
-        font-weight: 700;
-        color: #fff;
-    }
-    .score-badge.a { background: #16a34a; }
-    .score-badge.b { background: #d97706; }
-    .score-badge.c { background: #dc2626; }
-    .score-badge.d { background: #9ca3af; }
-
-    /* ─── Stat cards ─── */
-    .stats-row {
-        display: flex;
-        gap: 0.75rem;
-        margin: 1rem 0;
-    }
-    .stat-card {
-        flex: 1;
-        background: #fff;
-        border: 1px solid #e5e7eb;
-        border-radius: 10px;
-        padding: 1rem;
-        text-align: center;
-    }
-    .stat-card .value {
-        font-size: 1.75rem;
-        font-weight: 700;
-        line-height: 1;
-    }
-    .stat-card .label {
-        font-size: 0.7rem;
-        font-weight: 500;
-        text-transform: uppercase;
-        letter-spacing: 0.05em;
-        color: #9ca3af;
-        margin-top: 0.35rem;
-    }
-    .stat-card.green .value { color: #16a34a; }
-    .stat-card.amber .value { color: #d97706; }
-    .stat-card.red .value { color: #dc2626; }
-    .stat-card.gray .value { color: #9ca3af; }
+    .score-a { color: #4ade80; font-weight: 700; }
+    .score-b { color: #facc15; font-weight: 700; }
+    .score-c { color: #f87171; font-weight: 700; }
+    .score-d { color: #94a3b8; font-weight: 700; }
 
     /* ─── History cards ─── */
     .history-card {
-        background: #fff;
-        border: 1px solid #e5e7eb;
+        background: rgba(255, 255, 255, 0.03);
+        border: 1px solid #334155;
         border-radius: 12px;
         padding: 1.25rem 1.5rem;
         margin-bottom: 0.75rem;
-        transition: box-shadow 0.15s ease;
+        transition: border-color 0.2s ease;
     }
     .history-card:hover {
-        box-shadow: 0 1px 3px rgba(0,0,0,0.06);
+        border-color: #6366f1;
     }
     .history-card .meta {
         font-size: 0.75rem;
-        color: #9ca3af;
+        color: #64748b;
     }
     .history-card .title {
         font-size: 0.95rem;
         font-weight: 600;
-        color: #111;
+        color: #e2e8f0;
         margin: 0.15rem 0;
     }
     .history-card .filters {
         font-size: 0.75rem;
-        color: #6b7280;
+        color: #94a3b8;
     }
     .history-card .scores {
         display: flex;
@@ -184,39 +129,43 @@ st.markdown("""
     .empty-state {
         text-align: center;
         padding: 4rem 2rem;
-        color: #9ca3af;
-    }
-    .empty-state .icon {
-        font-size: 2.5rem;
-        margin-bottom: 0.75rem;
-        opacity: 0.4;
+        color: #64748b;
     }
     .empty-state .title {
         font-size: 1rem;
         font-weight: 600;
-        color: #6b7280;
+        color: #94a3b8;
     }
     .empty-state .desc {
         font-size: 0.85rem;
         margin-top: 0.25rem;
     }
 
-    /* ─── Streamlit overrides ─── */
+    /* ─── Streamlit input overrides ─── */
     .stSelectbox label, .stNumberInput label, .stCheckbox label, .stTextInput label {
         font-size: 0.8rem !important;
         font-weight: 500 !important;
-        color: #374151 !important;
+        color: #cbd5e1 !important;
     }
 
-    /* Tabs */
+    .stSelectbox > div > div,
+    .stNumberInput > div > div > input,
+    .stTextInput > div > div > input {
+        background: #1e293b !important;
+        border: 1px solid #334155 !important;
+        border-radius: 8px !important;
+        color: #e2e8f0 !important;
+    }
+
+    /* ─── Tabs ─── */
     .stTabs [data-baseweb="tab-list"] {
         background: transparent;
-        border-bottom: 1px solid #e5e7eb;
+        border-bottom: 1px solid #334155;
         gap: 0;
     }
     .stTabs [data-baseweb="tab"] {
         background: transparent;
-        color: #9ca3af;
+        color: #64748b;
         border: none;
         border-bottom: 2px solid transparent;
         padding: 0.6rem 1.25rem;
@@ -224,68 +173,76 @@ st.markdown("""
         font-weight: 500;
     }
     .stTabs [data-baseweb="tab"][aria-selected="true"] {
-        color: #111;
-        border-bottom: 2px solid #111;
+        color: #e2e8f0;
+        border-bottom: 2px solid #6366f1;
         background: transparent;
     }
 
-    /* Progress */
-    .stProgress > div > div { background-color: #e5e7eb; border-radius: 100px; }
-    .stProgress > div > div > div { background-color: #111; border-radius: 100px; }
+    /* ─── Progress ─── */
+    .stProgress > div > div { background-color: #334155; border-radius: 100px; }
+    .stProgress > div > div > div {
+        background: linear-gradient(90deg, #6366f1, #8b5cf6);
+        border-radius: 100px;
+    }
 
-    /* Primary button */
+    /* ─── Primary button ─── */
     .stButton > button[kind="primary"] {
-        background: #111;
+        background: linear-gradient(135deg, #6366f1, #8b5cf6);
         color: #fff;
         border: none;
         border-radius: 8px;
         font-weight: 600;
-        font-size: 0.85rem;
-        padding: 0.6rem 1.5rem;
-        transition: background 0.15s ease;
+        font-size: 0.9rem;
+        padding: 0.7rem 1.5rem;
+        transition: all 0.2s ease;
     }
     .stButton > button[kind="primary"]:hover {
-        background: #333;
-        color: #fff;
+        transform: translateY(-1px);
+        box-shadow: 0 8px 30px rgba(99, 102, 241, 0.4);
     }
 
-    /* Download button */
+    /* ─── Download button ─── */
     .stDownloadButton > button {
-        background: #fff;
-        color: #111;
-        border: 1px solid #e5e7eb;
+        background: rgba(99, 102, 241, 0.1);
+        color: #a5b4fc;
+        border: 1px solid rgba(99, 102, 241, 0.3);
         border-radius: 8px;
-        font-weight: 500;
+        font-weight: 600;
         font-size: 0.85rem;
-        transition: border-color 0.15s ease, box-shadow 0.15s ease;
+        transition: all 0.2s ease;
     }
     .stDownloadButton > button:hover {
-        border-color: #d1d5db;
-        box-shadow: 0 1px 2px rgba(0,0,0,0.05);
-        color: #111;
+        background: rgba(99, 102, 241, 0.2);
+        border-color: #6366f1;
+        color: #c7d2fe;
     }
 
-    /* Sidebar */
-    section[data-testid="stSidebar"] {
-        background: #fff;
-        border-right: 1px solid #e5e7eb;
-    }
-
-    /* Expander */
+    /* ─── Expander ─── */
     .streamlit-expanderHeader {
         font-size: 0.85rem;
         font-weight: 500;
-        color: #6b7280;
+        color: #94a3b8 !important;
+        background: rgba(255, 255, 255, 0.02) !important;
+        border-radius: 8px;
     }
 
-    /* Data table */
+    details {
+        border: 1px solid #334155 !important;
+        border-radius: 8px !important;
+        background: rgba(255, 255, 255, 0.02) !important;
+    }
+
+    /* ─── Data table ─── */
     .stDataFrame { border-radius: 8px; overflow: hidden; }
 
-    /* Hide branding */
-    #MainMenu, footer, header { visibility: hidden; }
+    /* ─── Divider ─── */
+    hr { border-color: #334155 !important; }
 
-    /* Divider override */
-    hr { border-color: #f3f4f6 !important; }
+    /* ─── Toggle ─── */
+    .stCheckbox span { color: #cbd5e1 !important; }
+
+    /* ─── Alert overrides ─── */
+    .stAlert { border-radius: 8px; }
 </style>
 """, unsafe_allow_html=True)
 
@@ -304,15 +261,34 @@ def save_to_history(timestamp, filters_text, df, excel_bytes, filename, qualifie
 
 
 def main():
-    # Header
+    # ─── Header ───
     st.markdown("""
-    <div class="header">
-        <h1>MiraScrap</h1>
-        <p>Trouvez et qualifiez des PME francaises en quelques clics</p>
+    <div style="text-align: center; padding: 2.5rem 0 1.5rem 0;">
+        <h1 style="font-size: 3.5rem; font-weight: 800; margin: 0;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            -webkit-background-clip: text; -webkit-text-fill-color: transparent;">
+            MiraScrap
+        </h1>
+        <p style="font-size: 1.15rem; color: #64748b; margin-top: 0.5rem; font-weight: 500;">
+            Trouvez et qualifiez des PME francaises en quelques clics
+        </p>
     </div>
     """, unsafe_allow_html=True)
 
-    # Tabs
+    col1, col2, col3 = st.columns([1, 1, 1])
+    with col2:
+        badges(
+            badge_list=[
+                ("Powered by Claude AI", "outline"),
+                ("100% Automatise", "default"),
+            ],
+            class_name="flex gap-2 justify-center",
+            key="header_badges"
+        )
+
+    st.markdown("<br>", unsafe_allow_html=True)
+
+    # ─── Tabs ───
     tab1, tab2 = st.tabs(["Recherche", "Historique"])
 
     with tab1:
@@ -323,12 +299,12 @@ def main():
 
 def search_tab():
     # ─── Filters ───
-    st.markdown('<div class="section-title">Filtres</div>', unsafe_allow_html=True)
+    st.markdown("### Criteres de recherche")
 
     col1, col2, col3 = st.columns(3)
 
     with col1:
-        ca_min = st.number_input("CA min (M)", min_value=0.0, max_value=1000.0, value=5.0, step=1.0)
+        ca_min = st.number_input("CA min (M)", min_value=0.0, max_value=1000.0, value=5.0, step=0.5)
         ca_max = st.number_input("CA max (M)", min_value=0.0, max_value=1000.0, value=50.0, step=1.0)
 
     with col2:
@@ -349,33 +325,31 @@ def search_tab():
 
         limit = st.number_input("Nombre d'entreprises", min_value=1, max_value=500, value=20)
 
-    # ─── Qualification ───
-    st.markdown("")
-    enable_ia = st.toggle(
-        "Qualification IA avancee (Claude)",
-        value=False,
-        help="Par defaut : scoring automatique par regles. Active l'IA pour une analyse plus riche (~3s/entreprise)."
-    )
-
-    # ─── API key (appears when IA is enabled) ───
-    api_key = ""
-    if enable_ia:
-        api_key = st.text_input(
-            "Cle API Anthropic",
-            value=config.ANTHROPIC_API_KEY or "",
-            type="password",
-            help="Obtiens ta cle sur console.anthropic.com",
-        )
-        if not api_key:
-            st.caption("Entre ta cle API Anthropic pour activer la qualification IA")
-
-    with st.expander("Plus de filtres"):
-        age_min = st.number_input("Age minimum entreprise (annees)", min_value=0, max_value=100, value=3)
+    # ─── Options avancees ───
+    with st.expander("Options avancees"):
+        age_min = st.slider("Age minimum entreprise (annees)", 0, 50, 3)
         col_dir1, col_dir2 = st.columns(2)
         with col_dir1:
             age_dir_min = st.number_input("Age min dirigeant", min_value=0, max_value=99, value=0, help="0 = pas de filtre")
         with col_dir2:
             age_dir_max = st.number_input("Age max dirigeant", min_value=0, max_value=99, value=0, help="0 = pas de filtre")
+
+        enable_ia = st.toggle(
+            "Qualification IA (Claude)",
+            value=False,
+            help="Scoring automatique par defaut. Active l'IA pour une analyse plus riche (~3s/entreprise)."
+        )
+
+        api_key = ""
+        if enable_ia:
+            api_key = st.text_input(
+                "Cle API Anthropic",
+                value=config.ANTHROPIC_API_KEY or "",
+                type="password",
+                placeholder="sk-ant-api03-...",
+                help="Necessaire pour la qualification IA",
+            )
+
         skip_enrichment = st.checkbox("Sauter l'enrichissement Societe.com")
 
     # ─── Summary pills ───
@@ -389,17 +363,16 @@ def search_tab():
     filters_text = " | ".join(pills)
 
     # ─── Launch ───
-    _, btn_col, _ = st.columns([1, 2, 1])
-    with btn_col:
-        if st.button("Lancer la recherche", type="primary", use_container_width=True):
-            run_pipeline(
-                ca_min=ca_min * 1e6, ca_max=ca_max * 1e6,
-                region_code=region_code, secteur_code=secteur_code,
-                forme_code=forme_code, age_min=age_min, limit=limit,
-                age_dir_min=age_dir_min, age_dir_max=age_dir_max,
-                api_key=api_key, skip_enrichment=skip_enrichment,
-                enable_ia=enable_ia, filters_text=filters_text,
-            )
+    st.markdown("")
+    if st.button("Lancer la recherche", type="primary", use_container_width=True):
+        run_pipeline(
+            ca_min=ca_min * 1e6, ca_max=ca_max * 1e6,
+            region_code=region_code, secteur_code=secteur_code,
+            forme_code=forme_code, age_min=age_min, limit=limit,
+            age_dir_min=age_dir_min, age_dir_max=age_dir_max,
+            api_key=api_key, skip_enrichment=skip_enrichment,
+            enable_ia=enable_ia, filters_text=filters_text,
+        )
 
 
 def run_pipeline(ca_min, ca_max, region_code, secteur_code, forme_code,
@@ -426,8 +399,8 @@ def run_pipeline(ca_min, ca_max, region_code, secteur_code, forme_code,
     status = st.empty()
 
     try:
-        # 1 — Scraping (API fournit CA + age dirigeant + resultat net)
-        status.markdown("**Recherche sur data.gouv.fr (CA, dirigeants, finances)...**")
+        # 1 - Scraping
+        status.markdown("**Recherche sur data.gouv.fr...**")
         progress.progress(10)
         scraper = DataGouvScraper()
         companies = scraper.search_companies(filtres)
@@ -439,21 +412,19 @@ def run_pipeline(ca_min, ca_max, region_code, secteur_code, forme_code,
         df = scraper.to_dataframe(companies)
         progress.progress(25)
 
-        # Stats API
         ca_filled = df['ca_euros'].notna().sum()
         age_filled = df['age_dirigeant'].notna().sum()
         st.success(f"{len(df)} entreprises trouvees (CA: {ca_filled}/{len(df)}, Age dirigeant: {age_filled}/{len(df)})")
 
-        # 2 — Enrichissement Societe.com (telephone, email, site web, tendance CA)
+        # 2 - Enrichissement
         if not skip_enrichment:
-            status.markdown("**Enrichissement Societe.com (tel, email, site web)...**")
+            status.markdown("**Enrichissement Societe.com...**")
             progress.progress(30)
             enricher = SocieteEnricher()
             df = enricher.enrich_dataframe(df, filter_ca=True, target_limit=limit)
             progress.progress(55)
             st.success(f"{len(df)} entreprises enrichies")
         else:
-            # Filtre CA manuellement si pas d'enrichissement
             before = len(df)
             df = df[
                 (df['ca_euros'].isna()) |
@@ -463,9 +434,8 @@ def run_pipeline(ca_min, ca_max, region_code, secteur_code, forme_code,
                 df = df.head(limit)
             progress.progress(55)
 
-        # 3 — Scoring
+        # 3 - Scoring
         if enable_ia and api_key:
-            # Qualification IA avancee
             status.markdown("**Qualification IA (Claude)...**")
             progress.progress(60)
             qualifier = ProspectQualifier(api_key)
@@ -473,7 +443,6 @@ def run_pipeline(ca_min, ca_max, region_code, secteur_code, forme_code,
             progress.progress(90)
             st.success("Prospects qualifies par IA")
         else:
-            # Scoring automatique par regles
             status.markdown("**Scoring automatique...**")
             progress.progress(60)
             scorer = AutoScorer()
@@ -481,7 +450,7 @@ def run_pipeline(ca_min, ca_max, region_code, secteur_code, forme_code,
             progress.progress(90)
             st.success("Prospects scores automatiquement")
 
-        # 4 — Export Excel
+        # 4 - Export
         status.markdown("**Generation Excel...**")
         excel_bytes = format_excel_output(df)
         filename = f"prospects_{timestamp}.xlsx"
@@ -500,61 +469,72 @@ def run_pipeline(ca_min, ca_max, region_code, secteur_code, forme_code,
 def show_results(df, excel_bytes, filename):
     """Affiche les resultats apres pipeline"""
     st.markdown("---")
+    st.markdown("### Resultats")
 
-    # Score cards
-    if 'score' in df.columns:
-        counts = df['score'].value_counts()
-        st.markdown(f"""
-        <div class="stats-row">
-            <div class="stat-card green">
-                <div class="value">{counts.get('A', 0)}</div>
-                <div class="label">Score A</div>
-            </div>
-            <div class="stat-card amber">
-                <div class="value">{counts.get('B', 0)}</div>
-                <div class="label">Score B</div>
-            </div>
-            <div class="stat-card red">
-                <div class="value">{counts.get('C', 0)}</div>
-                <div class="label">Score C</div>
-            </div>
-            <div class="stat-card gray">
-                <div class="value">{counts.get('D', 0)}</div>
-                <div class="label">Score D</div>
-            </div>
-        </div>
-        """, unsafe_allow_html=True)
+    # ─── Metric cards ───
+    col1, col2, col3, col4 = st.columns(4)
+
+    with col1:
+        metric_card(
+            title="Entreprises",
+            content=str(len(df)),
+            description="Trouvees et enrichies",
+            key="m_total"
+        )
+    with col2:
+        score_a = len(df[df['score'] == 'A']) if 'score' in df.columns else 0
+        metric_card(
+            title="Score A",
+            content=str(score_a),
+            description="Prospects prioritaires",
+            key="m_score_a"
+        )
+    with col3:
+        ca_moyen = df['ca_euros'].dropna().mean() / 1_000_000 if df['ca_euros'].notna().any() else 0
+        metric_card(
+            title="CA moyen",
+            content=f"{ca_moyen:.1f} M",
+            description="Moyenne des prospects",
+            key="m_ca"
+        )
+    with col4:
+        age_moyen = df['age_dirigeant'].dropna().mean() if df['age_dirigeant'].notna().any() else 0
+        metric_card(
+            title="Age dirigeant",
+            content=f"{age_moyen:.0f} ans" if age_moyen > 0 else "N/A",
+            description="Moyenne",
+            key="m_age"
+        )
 
     st.markdown("")
+
+    # ─── Download ───
     st.download_button(
         label="Telecharger Excel",
         data=excel_bytes,
         file_name=filename,
-        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        use_container_width=True,
     )
 
-    # Preview table
+    # ─── Preview table ───
     st.markdown('<div class="section-title">Apercu</div>', unsafe_allow_html=True)
 
     preview_df = df.copy()
 
-    # Format CA in M for display
     if 'ca_euros' in preview_df.columns:
         preview_df['CA'] = preview_df['ca_euros'].apply(
             lambda x: f"{x/1e6:.1f}M" if pd.notna(x) and isinstance(x, (int, float)) and x > 0 else ""
         )
 
-    # Dirigeant: best source
     preview_df['dirigeant'] = preview_df.apply(
         lambda r: r.get('dirigeant_enrichi') or r.get('dirigeant_principal') or '', axis=1
     )
 
-    # Activite: activite_declaree (Societe.com) sinon libelle NAF
     preview_df['activite'] = preview_df.apply(
         lambda r: r.get('activite_declaree') or r.get('libelle_naf') or '', axis=1
     )
 
-    # Build preview columns
     cols_map = {
         'score': 'Score',
         'nom_entreprise': 'Entreprise',
@@ -579,7 +559,6 @@ def history_tab():
     if not history:
         st.markdown("""
         <div class="empty-state">
-            <div class="icon"></div>
             <div class="title">Aucune recherche</div>
             <div class="desc">Tes resultats apparaitront ici apres une recherche.</div>
         </div>
@@ -587,14 +566,14 @@ def history_tab():
         return
 
     for i, entry in enumerate(history):
-        tag = "Qualifie" if entry['qualified'] else "Enrichi"
+        tag = "Qualifie IA" if entry['qualified'] else "Auto-score"
         scores = entry.get('scores', {})
 
         scores_html = ""
         if scores:
-            colors = {'A': '#16a34a', 'B': '#d97706', 'C': '#dc2626', 'D': '#9ca3af'}
+            colors = {'A': '#4ade80', 'B': '#facc15', 'C': '#f87171', 'D': '#94a3b8'}
             scores_html = '<div class="scores">' + ''.join(
-                f'<span style="color:{colors.get(s, "#9ca3af")}">{s}: {c}</span>'
+                f'<span style="color:{colors.get(s, "#94a3b8")}">{s}: {c}</span>'
                 for s, c in sorted(scores.items())
             ) + '</div>'
 

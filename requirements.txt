@@ -15,6 +15,7 @@ anthropic>=0.45.0
 
 # Interface web
 streamlit>=1.31.1
+streamlit-shadcn-ui>=0.1.19
 
 # Utilitaires
 tqdm>=4.66.2
