@@ -15,7 +15,7 @@ from qualifier import ProspectQualifier
 import config
 
 st.set_page_config(
-    page_title="Prospect Scraper",
+    page_title="MiraScrap",
     page_icon="",
     layout="wide",
     initial_sidebar_state="collapsed"
@@ -45,7 +45,10 @@ st.markdown("""
     .header h1 {
         font-size: 1.75rem;
         font-weight: 700;
-        color: #111;
+        background: linear-gradient(135deg, #6366f1, #8b5cf6, #a855f7);
+        -webkit-background-clip: text;
+        -webkit-text-fill-color: transparent;
+        background-clip: text;
         letter-spacing: -0.03em;
         margin: 0;
     }
@@ -304,33 +307,21 @@ def main():
     # Header
     st.markdown("""
     <div class="header">
-        <h1>Prospect Scraper</h1>
+        <h1>MiraScrap</h1>
         <p>Trouvez et qualifiez des PME francaises en quelques clics</p>
     </div>
     """, unsafe_allow_html=True)
-
-    # Sidebar — API key
-    with st.sidebar:
-        st.markdown("#### Parametres")
-        api_key = st.text_input(
-            "Cle API Anthropic",
-            value=config.ANTHROPIC_API_KEY or "",
-            type="password",
-            help="console.anthropic.com"
-        )
-        if not api_key:
-            st.info("Ajoute ta cle API pour activer la qualification IA")
 
     # Tabs
     tab1, tab2 = st.tabs(["Recherche", "Historique"])
 
     with tab1:
-        search_tab(api_key)
+        search_tab()
     with tab2:
         history_tab()
 
 
-def search_tab(api_key: str):
+def search_tab():
     # ─── Filters ───
     st.markdown('<div class="section-title">Filtres</div>', unsafe_allow_html=True)
 
@@ -366,6 +357,18 @@ def search_tab(api_key: str):
         help="Analyse avec Claude AI. Ajoute ~30s pour 10 entreprises. Score les prospects selon leur potentiel M&A."
     )
     skip_qualification = not enable_qualification
+
+    # ─── API key (appears when qualification is enabled) ───
+    api_key = ""
+    if enable_qualification:
+        api_key = st.text_input(
+            "Cle API Anthropic",
+            value=config.ANTHROPIC_API_KEY or "",
+            type="password",
+            help="Obtiens ta cle sur console.anthropic.com",
+        )
+        if not api_key:
+            st.caption("Entre ta cle API Anthropic pour activer la qualification IA")
 
     with st.expander("Plus de filtres"):
         age_min = st.number_input("Age minimum (annees)", min_value=0, max_value=100, value=3)
@@ -527,15 +530,21 @@ def show_results(df, excel_bytes, filename):
             lambda x: f"{x/1e6:.1f}M" if pd.notna(x) and isinstance(x, (int, float)) and x > 0 else ""
         )
 
+    # Dirigeant: best source
+    preview_df['dirigeant'] = preview_df.apply(
+        lambda r: r.get('dirigeant_enrichi') or r.get('dirigeant_principal') or '', axis=1
+    )
+
     # Build preview columns
     cols_map = {
         'score': 'Score',
         'nom_entreprise': 'Entreprise',
         'CA': 'CA',
         'evolution_ca': 'Tendance',
-        'dirigeant_enrichi': 'Dirigeant',
+        'dirigeant': 'Dirigeant',
         'age_dirigeant': 'Age',
         'ville': 'Ville',
+        'telephone': 'Tel',
         'url_pappers': 'Pappers',
         'justification': 'Justification',
     }

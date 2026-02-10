@@ -270,6 +270,7 @@ class DataGouvScraper:
 
                     # Dirigeant
                     'dirigeant_principal': self._extract_dirigeant(company),
+                    'age_dirigeant_api': self._extract_age_dirigeant(company),
 
                     # Liens
                     'url_pappers': f"https://www.pappers.fr/entreprise/{company.get('siren', '')}",
@@ -309,6 +310,23 @@ class DataGouvScraper:
             return ""
         except Exception:
             return ""
+
+    def _extract_age_dirigeant(self, company: Dict) -> Optional[int]:
+        """Extrait l'âge du dirigeant depuis date_de_naissance de l'API (format: '1972-12')"""
+        try:
+            dirigeants = company.get('dirigeants', [])
+            if not dirigeants:
+                return None
+            date_naissance = dirigeants[0].get('date_de_naissance', '')
+            if not date_naissance or len(date_naissance) < 4:
+                return None
+            birth_year = int(date_naissance[:4])
+            age = datetime.now().year - birth_year
+            if 20 <= age <= 95:
+                return age
+            return None
+        except Exception:
+            return None
 
 
 def main():

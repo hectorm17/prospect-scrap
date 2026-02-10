@@ -272,30 +272,24 @@ class SocieteEnricher:
     def _extract_dirigeant(self, soup: BeautifulSoup) -> str:
         """Extrait le dirigeant avec sa fonction"""
         try:
-            # Méthode 1: Lien /dirigeant/ dans la page
-            for elem in soup.find_all(['div', 'section']):
-                text = elem.get_text()
-                if 'Dirigeant' in text:
-                    name_elem = elem.find_next('a')
-                    if name_elem and '/dirigeant/' in str(name_elem.get('href', '')):
-                        name = name_elem.get_text(strip=True)
-                        # Cherche la fonction dans un élément voisin
-                        function_elem = name_elem.find_next(['span', 'div'])
-                        if function_elem:
-                            func_text = function_elem.get_text(strip=True)
-                            keywords = ['Président', 'Directeur', 'Gérant',
-                                        'PDG', 'CEO', 'DG', 'Administrateur',
-                                        'Fondateur']
-                            for kw in keywords:
-                                if kw.lower() in func_text.lower():
-                                    return f"{name} ({func_text})"
-                        return name
+            # Méthode 1: Structure Societe.com — <p>Rôle</p> dans un bloc avec <a>Nom</a>
+            role_keywords = ['Gérant', 'Président', 'Directeur', 'PDG', 'DG', 'Administrateur']
+            for p in soup.find_all('p'):
+                text = p.get_text(strip=True)
+                if any(text.startswith(kw) for kw in role_keywords) and 'Ancien' not in text and 'partant' not in text:
+                    role = text.split('Depuis')[0].split('Du ')[0].strip()
+                    parent = p.find_parent(['article', 'div', 'section'])
+                    if parent:
+                        name_elem = parent.find(['h2', 'h3', 'h4', 'a'])
+                        if name_elem:
+                            name = name_elem.get_text(strip=True)
+                            if len(name) > 2 and len(name) < 60 and 'Annonce' not in name and 'BODACC' not in name:
+                                return f"{name} ({role})"
 
-            # Méthode 2: Meta description souvent contient le dirigeant
+            # Méthode 2: Meta description "dirigée par NOM PRENOM"
             meta = soup.find('meta', {'name': 'description'})
             if meta and 'content' in meta.attrs:
                 desc = meta['content']
-                # Cherche pattern "dirigée par NOM PRENOM"
                 match = re.search(r'dirig[ée]+e?\s+par\s+([A-ZÉÈÊËÀÂÄÏÎÔÖÙÛÜ][a-zéèêëàâäïîôöùûü]+(?:\s+[A-ZÉÈÊËÀÂÄÏÎÔÖÙÛÜ][a-zéèêëàâäïîôöùûü]+)+)', desc)
                 if match:
                     return match.group(1)
@@ -394,6 +388,13 @@ class SocieteEnricher:
 
             # Fusionne les données
             enriched_row = {**row.to_dict(), **societe_data}
+
+            # Age dirigeant: préfère Societe.com, sinon API
+            if not enriched_row.get('age_dirigeant'):
+                api_age = enriched_row.get('age_dirigeant_api')
+                if api_age:
+                    enriched_row['age_dirigeant'] = api_age
+
             enriched_data.append(enriched_row)
 
             # Délai entre requêtes (respecte le serveur)
