@@ -52,6 +52,7 @@ class SocieteEnricher:
                 'email': self._extract_email(soup),
                 'site_web': self._extract_website(soup),
                 'dirigeant_enrichi': self._extract_dirigeant(soup),
+                'age_dirigeant': self._extract_age_dirigeant(soup),
                 'activite_desc': self._extract_activite(soup),
             }
 
@@ -303,6 +304,43 @@ class SocieteEnricher:
         except Exception:
             return ""
 
+    def _extract_age_dirigeant(self, soup: BeautifulSoup) -> Optional[int]:
+        """Extrait l'age du dirigeant depuis Societe.com"""
+        try:
+            from datetime import datetime
+            html_text = str(soup)
+
+            # Methode 1: "ne(e) en YYYY" dans le HTML
+            match = re.search(r'[Nn][ée]+e?\s+en\s+(\d{4})', html_text)
+            if match:
+                birth_year = int(match.group(1))
+                age = datetime.now().year - birth_year
+                if 20 <= age <= 95:
+                    return age
+
+            # Methode 2: "XX ans" pres d'un lien /dirigeant/
+            for link in soup.find_all('a', href=True):
+                if '/dirigeant/' in link.get('href', ''):
+                    parent = link.find_parent(['div', 'section', 'td'])
+                    if parent:
+                        text = parent.get_text()
+                        match = re.search(r'(\d{2})\s*ans', text)
+                        if match:
+                            age = int(match.group(1))
+                            if 20 <= age <= 95:
+                                return age
+
+            # Methode 3: ADSTACK.data.age variable JS
+            match = re.search(r'ADSTACK\.data\.age\s*=\s*(\d+)', html_text)
+            if match:
+                age = int(match.group(1))
+                if 20 <= age <= 95:
+                    return age
+
+            return None
+        except Exception:
+            return None
+
     def _extract_activite(self, soup: BeautifulSoup) -> str:
         """Extrait la description de l'activité"""
         try:
@@ -324,6 +362,7 @@ class SocieteEnricher:
             'email': '',
             'site_web': '',
             'dirigeant_enrichi': '',
+            'age_dirigeant': None,
             'activite_desc': '',
         }
 

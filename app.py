@@ -358,10 +358,18 @@ def search_tab(api_key: str):
 
         limit = st.number_input("Nombre d'entreprises", min_value=1, max_value=500, value=20)
 
+    # ─── Qualification toggle (visible) ───
+    st.markdown("")
+    enable_qualification = st.toggle(
+        "Qualification IA (scoring A/B/C/D)",
+        value=True,
+        help="Analyse avec Claude AI. Ajoute ~30s pour 10 entreprises. Score les prospects selon leur potentiel M&A."
+    )
+    skip_qualification = not enable_qualification
+
     with st.expander("Plus de filtres"):
         age_min = st.number_input("Age minimum (annees)", min_value=0, max_value=100, value=3)
         skip_enrichment = st.checkbox("Sauter l'enrichissement Societe.com")
-        skip_qualification = st.checkbox("Sauter la qualification IA")
 
     # ─── Summary pills ───
     pills = [f"CA {ca_min:.0f}-{ca_max:.0f}M", region, secteur, forme, f"Limit {limit}"]
@@ -525,6 +533,8 @@ def show_results(df, excel_bytes, filename):
         'nom_entreprise': 'Entreprise',
         'CA': 'CA',
         'evolution_ca': 'Tendance',
+        'dirigeant_enrichi': 'Dirigeant',
+        'age_dirigeant': 'Age',
         'ville': 'Ville',
         'url_pappers': 'Pappers',
         'justification': 'Justification',

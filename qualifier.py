@@ -35,6 +35,8 @@ class ProspectQualifier:
         forme = company_data.get('forme_juridique', 'N/A')
         date_creation = company_data.get('date_creation', 'N/A')
         dirigeant = company_data.get('dirigeant_enrichi', company_data.get('dirigeant_principal', 'N/A'))
+        age_dir = company_data.get('age_dirigeant')
+        age_dir_fmt = f"{age_dir} ans" if age_dir else "Non disponible"
         ville = company_data.get('ville', 'N/A')
         effectif = company_data.get('tranche_effectif', company_data.get('effectif_societe', 'N/A'))
 
@@ -49,14 +51,17 @@ ENTREPRISE :
 - Forme juridique : {forme}
 - Création : {date_creation}
 - Dirigeant : {dirigeant}
+- Âge dirigeant : {age_dir_fmt}
 - Ville : {ville}
 - Effectif : {effectif}
 
-SCORING :
-- A = PME indépendante, rentable, CA 10-30M€, fondateur dirigeant probable
-- B = PME correcte, CA 5-50M€, 1-2 critères manquants
-- C = Trop petite (CA<5M€), ou association, ou secteur inadapté
+SCORING (critères par ordre d'importance) :
+- A = PME indépendante, rentable, CA 10-30M€, dirigeant > 55 ans (transmission probable)
+- B = PME correcte, CA 5-50M€, 1-2 critères manquants (dirigeant jeune OU CA hors fourchette idéale)
+- C = Trop petite (CA<5M€), association, ou secteur inadapté
 - D = Hors cible (pas une entreprise commerciale, CA inconnu et petite structure)
+
+Note : un dirigeant > 55 ans est un signal fort de transmission → favorise score A.
 
 Réponds UNIQUEMENT en JSON :
 {{"score":"A/B/C/D","score_label":"label court","resume":"activité en 2 lignes","analyse":"fit M&A en 2 lignes","justification":"pourquoi ce score en 1 ligne"}}"""
@@ -190,6 +195,7 @@ Réponds UNIQUEMENT en JSON :
             ('resultat_m', 'Résultat Net (M€)'),
             ('secteur_final', "Secteur d'Activité"),
             ('dirigeant_final', 'Dirigeant Principal'),
+            ('age_dirigeant', 'Âge Dirigeant'),
             ('telephone', 'Téléphone'),
             ('email', 'Email'),
             ('site_web', 'Site Web'),
@@ -289,7 +295,7 @@ Réponds UNIQUEMENT en JSON :
                 'Score': 7, 'Qualification': 30, 'Entreprise': 35,
                 "Chiffre d'Affaires (M€)": 18, 'Évolution CA': 22,
                 'Résultat Net (M€)': 16, "Secteur d'Activité": 30,
-                'Dirigeant Principal': 25, 'Téléphone': 14, 'Email': 25,
+                'Dirigeant Principal': 25, 'Âge Dirigeant': 12, 'Téléphone': 14, 'Email': 25,
                 'Site Web': 25, 'Adresse du Siège': 35, 'Ville': 15,
                 'Région': 18, 'Effectif': 18, 'Date de Création': 14,
                 'Forme Juridique': 14, 'SIREN': 12, 'Fiche Pappers': 40,
