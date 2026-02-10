@@ -1,6 +1,6 @@
 """
 Prospect Scraper B2B — Interface Streamlit
-Design SaaS moderne dark mode avec streamlit-shadcn-ui
+Design SaaS dark mode sobre — palette bleu marine + gris + accent rouge
 """
 
 import streamlit as st
@@ -27,7 +27,7 @@ if 'search_history' not in st.session_state:
     st.session_state.search_history = []
 
 # ─────────────────────────────────────────────
-# CSS — Dark mode SaaS
+# CSS — Dark mode sobre (bleu marine + gris + rouge)
 # ─────────────────────────────────────────────
 st.markdown("""
 <style>
@@ -35,24 +35,26 @@ st.markdown("""
 
     * { font-family: 'Inter', -apple-system, sans-serif !important; }
 
-    /* ─── Dark background ─── */
+    /* ─── Background sobre ─── */
     .stApp {
-        background: linear-gradient(180deg, #0f172a 0%, #1e293b 100%);
+        background: #0f172a;
     }
 
     /* ─── Hide branding ─── */
-    #MainMenu, footer, header { visibility: hidden; }
+    #MainMenu { visibility: hidden; }
+    footer { visibility: hidden; }
+    header { visibility: hidden; }
 
     /* ─── Container ─── */
     .block-container {
-        padding-top: 1rem;
+        padding-top: 2rem;
         max-width: 1200px;
     }
 
-    /* ─── Headings ─── */
-    h1, h2, h3, h4, h5, h6, p, span, label, div {
-        color: #e2e8f0;
-    }
+    /* ─── Typography ─── */
+    h1, h2, h3, h4, h5, h6 { color: #e2e8f0 !important; }
+    p { color: #94a3b8 !important; }
+    label { color: #cbd5e1 !important; font-weight: 500 !important; }
 
     /* ─── Section titles ─── */
     .section-title {
@@ -64,34 +66,140 @@ st.markdown("""
         margin: 1.5rem 0 0.75rem 0;
     }
 
-    /* ─── Filter pills ─── */
+    /* ─── Inputs sobre ─── */
+    input, select, textarea {
+        border-radius: 8px !important;
+        border: 1px solid #334155 !important;
+        background: #1e293b !important;
+        color: #e2e8f0 !important;
+    }
+
+    input:focus, select:focus {
+        border-color: #475569 !important;
+        box-shadow: 0 0 0 3px rgba(71, 85, 105, 0.1) !important;
+    }
+
+    .stSelectbox label, .stNumberInput label, .stCheckbox label, .stTextInput label {
+        font-size: 0.8rem !important;
+        font-weight: 500 !important;
+        color: #cbd5e1 !important;
+    }
+
+    .stSelectbox > div > div,
+    .stNumberInput > div > div > input,
+    .stTextInput > div > div > input {
+        background: #1e293b !important;
+        border: 1px solid #334155 !important;
+        border-radius: 8px !important;
+        color: #e2e8f0 !important;
+    }
+
+    [data-baseweb="select"] { background: #1e293b !important; }
+
+    button[kind="increment"], button[kind="decrement"] {
+        background: transparent !important;
+        color: #94a3b8 !important;
+    }
+
+    /* ─── Filter pills sobre ─── */
     .filter-pills {
         display: flex;
         flex-wrap: wrap;
-        gap: 0.4rem;
-        margin: 0.75rem 0 1.25rem 0;
+        gap: 10px;
+        margin: 1rem 0 1.5rem 0;
     }
     .pill {
         display: inline-flex;
         align-items: center;
-        background: rgba(99, 102, 241, 0.15);
-        color: #a5b4fc;
-        padding: 0.3rem 0.75rem;
-        border-radius: 100px;
-        font-size: 0.75rem;
+        background: #1e293b;
+        color: #94a3b8;
+        padding: 8px 16px;
+        border-radius: 6px;
+        font-size: 0.8rem;
         font-weight: 500;
-        border: 1px solid rgba(99, 102, 241, 0.25);
+        border: 1px solid #334155;
     }
 
-    /* ─── Score badges ─── */
-    .score-a { color: #4ade80; font-weight: 700; }
-    .score-b { color: #facc15; font-weight: 700; }
-    .score-c { color: #f87171; font-weight: 700; }
-    .score-d { color: #94a3b8; font-weight: 700; }
+    /* ─── Tabs sobre ─── */
+    .stTabs [data-baseweb="tab-list"] {
+        background: transparent;
+        border-bottom: 1px solid #334155;
+        gap: 8px;
+    }
+    .stTabs [data-baseweb="tab"] {
+        background: transparent;
+        color: #94a3b8;
+        border: none;
+        border-bottom: 2px solid transparent;
+        border-radius: 8px 8px 0 0;
+        padding: 12px 24px;
+        font-size: 0.85rem;
+        font-weight: 500;
+    }
+    .stTabs [data-baseweb="tab"][aria-selected="true"] {
+        background: #1e293b;
+        color: #e2e8f0;
+        border-bottom: 2px solid #dc2626;
+    }
+
+    /* ─── Progress sobre ─── */
+    .stProgress > div > div { background-color: #334155; border-radius: 100px; }
+    .stProgress > div > div > div {
+        background: #dc2626;
+        border-radius: 100px;
+    }
+
+    /* ─── Primary button — rouge sobre ─── */
+    .stButton > button[kind="primary"] {
+        background: #dc2626 !important;
+        color: #fff !important;
+        border: none !important;
+        border-radius: 8px !important;
+        font-weight: 600 !important;
+        font-size: 0.9rem !important;
+        padding: 12px 24px !important;
+        transition: all 0.2s ease !important;
+    }
+    .stButton > button[kind="primary"]:hover {
+        background: #b91c1c !important;
+        transform: translateY(-1px);
+        box-shadow: 0 8px 30px rgba(220, 38, 38, 0.3);
+    }
+
+    /* ─── Download button sobre ─── */
+    .stDownloadButton > button {
+        background: #1e293b !important;
+        color: #e2e8f0 !important;
+        border: 1px solid #334155 !important;
+        border-radius: 8px !important;
+        font-weight: 600 !important;
+        font-size: 0.85rem !important;
+        transition: all 0.2s ease !important;
+    }
+    .stDownloadButton > button:hover {
+        background: #334155 !important;
+        border-color: #475569 !important;
+        color: #f1f5f9 !important;
+    }
+
+    /* ─── Expander sobre ─── */
+    .streamlit-expanderHeader {
+        font-size: 0.85rem;
+        font-weight: 500;
+        color: #e2e8f0 !important;
+        background: #1e293b !important;
+        border-radius: 8px;
+    }
+
+    details {
+        border: 1px solid #334155 !important;
+        border-radius: 8px !important;
+        background: #1e293b !important;
+    }
 
     /* ─── History cards ─── */
     .history-card {
-        background: rgba(255, 255, 255, 0.03);
+        background: #1e293b;
         border: 1px solid #334155;
         border-radius: 12px;
         padding: 1.25rem 1.5rem;
@@ -99,7 +207,7 @@ st.markdown("""
         transition: border-color 0.2s ease;
     }
     .history-card:hover {
-        border-color: #6366f1;
+        border-color: #475569;
     }
     .history-card .meta {
         font-size: 0.75rem;
@@ -141,108 +249,20 @@ st.markdown("""
         margin-top: 0.25rem;
     }
 
-    /* ─── Streamlit input overrides ─── */
-    .stSelectbox label, .stNumberInput label, .stCheckbox label, .stTextInput label {
-        font-size: 0.8rem !important;
-        font-weight: 500 !important;
-        color: #cbd5e1 !important;
-    }
-
-    .stSelectbox > div > div,
-    .stNumberInput > div > div > input,
-    .stTextInput > div > div > input {
-        background: #1e293b !important;
-        border: 1px solid #334155 !important;
-        border-radius: 8px !important;
-        color: #e2e8f0 !important;
-    }
-
-    /* ─── Tabs ─── */
-    .stTabs [data-baseweb="tab-list"] {
-        background: transparent;
-        border-bottom: 1px solid #334155;
-        gap: 0;
-    }
-    .stTabs [data-baseweb="tab"] {
-        background: transparent;
-        color: #64748b;
-        border: none;
-        border-bottom: 2px solid transparent;
-        padding: 0.6rem 1.25rem;
-        font-size: 0.85rem;
-        font-weight: 500;
-    }
-    .stTabs [data-baseweb="tab"][aria-selected="true"] {
-        color: #e2e8f0;
-        border-bottom: 2px solid #6366f1;
-        background: transparent;
-    }
-
-    /* ─── Progress ─── */
-    .stProgress > div > div { background-color: #334155; border-radius: 100px; }
-    .stProgress > div > div > div {
-        background: linear-gradient(90deg, #6366f1, #8b5cf6);
-        border-radius: 100px;
-    }
-
-    /* ─── Primary button ─── */
-    .stButton > button[kind="primary"] {
-        background: linear-gradient(135deg, #6366f1, #8b5cf6);
-        color: #fff;
-        border: none;
-        border-radius: 8px;
-        font-weight: 600;
-        font-size: 0.9rem;
-        padding: 0.7rem 1.5rem;
-        transition: all 0.2s ease;
-    }
-    .stButton > button[kind="primary"]:hover {
-        transform: translateY(-1px);
-        box-shadow: 0 8px 30px rgba(99, 102, 241, 0.4);
-    }
-
-    /* ─── Download button ─── */
-    .stDownloadButton > button {
-        background: rgba(99, 102, 241, 0.1);
-        color: #a5b4fc;
-        border: 1px solid rgba(99, 102, 241, 0.3);
-        border-radius: 8px;
-        font-weight: 600;
-        font-size: 0.85rem;
-        transition: all 0.2s ease;
-    }
-    .stDownloadButton > button:hover {
-        background: rgba(99, 102, 241, 0.2);
-        border-color: #6366f1;
-        color: #c7d2fe;
-    }
-
-    /* ─── Expander ─── */
-    .streamlit-expanderHeader {
-        font-size: 0.85rem;
-        font-weight: 500;
-        color: #94a3b8 !important;
-        background: rgba(255, 255, 255, 0.02) !important;
-        border-radius: 8px;
-    }
-
-    details {
-        border: 1px solid #334155 !important;
-        border-radius: 8px !important;
-        background: rgba(255, 255, 255, 0.02) !important;
-    }
-
     /* ─── Data table ─── */
     .stDataFrame { border-radius: 8px; overflow: hidden; }
 
     /* ─── Divider ─── */
     hr { border-color: #334155 !important; }
 
-    /* ─── Toggle ─── */
+    /* ─── Toggle / Checkbox ─── */
     .stCheckbox span { color: #cbd5e1 !important; }
 
-    /* ─── Alert overrides ─── */
+    /* ─── Alert ─── */
     .stAlert { border-radius: 8px; }
+
+    /* ─── Slider ─── */
+    .stSlider > div > div > div { color: #cbd5e1 !important; }
 </style>
 """, unsafe_allow_html=True)
 
@@ -261,15 +281,15 @@ def save_to_history(timestamp, filters_text, df, excel_bytes, filename, qualifie
 
 
 def main():
-    # ─── Header ───
+    # ─── Header sobre ───
     st.markdown("""
-    <div style="text-align: center; padding: 2.5rem 0 1.5rem 0;">
+    <div style="text-align: center; padding: 3rem 0 2rem 0;">
         <h1 style="font-size: 3.5rem; font-weight: 800; margin: 0;
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            background: linear-gradient(135deg, #1e293b 0%, #334155 100%);
             -webkit-background-clip: text; -webkit-text-fill-color: transparent;">
             MiraScrap
         </h1>
-        <p style="font-size: 1.15rem; color: #64748b; margin-top: 0.5rem; font-weight: 500;">
+        <p style="font-size: 1.15rem; color: #94a3b8; margin-top: 0.5rem; font-weight: 500;">
             Trouvez et qualifiez des PME francaises en quelques clics
         </p>
     </div>
@@ -298,41 +318,60 @@ def main():
 
 
 def search_tab():
-    # ─── Filters ───
+    # ─── Filtres ───
     st.markdown("### Criteres de recherche")
+    st.markdown("<br>", unsafe_allow_html=True)
 
-    col1, col2, col3 = st.columns(3)
-
+    # Ligne 1 : CA
+    col1, col2, col_spacer = st.columns([1, 1, 1])
     with col1:
         ca_min = st.number_input("CA min (M)", min_value=0.0, max_value=1000.0, value=5.0, step=0.5)
+    with col2:
         ca_max = st.number_input("CA max (M)", min_value=0.0, max_value=1000.0, value=50.0, step=1.0)
 
-    with col2:
+    st.markdown("<br>", unsafe_allow_html=True)
+
+    # Ligne 2 : Region et Secteur
+    col1, col2, col_spacer = st.columns([1, 1, 1])
+    with col1:
         region_options = ["Toute la France"] + [f"{lib}" for _, lib in config.REGIONS.items()]
         region_labels = {lib: code for code, lib in config.REGIONS.items()}
         region = st.selectbox("Region", region_options)
         region_code = region_labels.get(region) if region != "Toute la France" else None
-
+    with col2:
         secteur_options = ["Tous les secteurs"] + [f"{lib}" for _, lib in config.SECTEURS_NAF.items()]
         secteur_labels = {lib: code for code, lib in config.SECTEURS_NAF.items()}
         secteur = st.selectbox("Secteur", secteur_options)
         secteur_code = secteur_labels.get(secteur) if secteur != "Tous les secteurs" else None
 
-    with col3:
+    st.markdown("<br>", unsafe_allow_html=True)
+
+    # Ligne 3 : Forme juridique et Nombre
+    col1, col2, col_spacer = st.columns([1, 1, 1])
+    with col1:
         forme_options = ["Toutes", "SAS", "SARL", "SA"]
         forme = st.selectbox("Forme juridique", forme_options)
         forme_code = None if forme == "Toutes" else forme
-
+    with col2:
         limit = st.number_input("Nombre d'entreprises", min_value=1, max_value=500, value=20)
 
+    st.markdown("<br><br>", unsafe_allow_html=True)
+
     # ─── Options avancees ───
-    with st.expander("Options avancees"):
+    with st.expander("Options avancees", expanded=False):
+        st.markdown("<br>", unsafe_allow_html=True)
+
         age_min = st.slider("Age minimum entreprise (annees)", 0, 50, 3)
+
+        st.markdown("<br>", unsafe_allow_html=True)
+
         col_dir1, col_dir2 = st.columns(2)
         with col_dir1:
             age_dir_min = st.number_input("Age min dirigeant", min_value=0, max_value=99, value=0, help="0 = pas de filtre")
         with col_dir2:
             age_dir_max = st.number_input("Age max dirigeant", min_value=0, max_value=99, value=0, help="0 = pas de filtre")
+
+        st.markdown("<br>", unsafe_allow_html=True)
 
         enable_ia = st.toggle(
             "Qualification IA (Claude)",
@@ -342,6 +381,7 @@ def search_tab():
 
         api_key = ""
         if enable_ia:
+            st.markdown("---")
             api_key = st.text_input(
                 "Cle API Anthropic",
                 value=config.ANTHROPIC_API_KEY or "",
@@ -349,10 +389,16 @@ def search_tab():
                 placeholder="sk-ant-api03-...",
                 help="Necessaire pour la qualification IA",
             )
+            if not api_key:
+                st.warning("Cle API requise pour activer la qualification IA")
+
+        st.markdown("<br>", unsafe_allow_html=True)
 
         skip_enrichment = st.checkbox("Sauter l'enrichissement Societe.com")
 
-    # ─── Summary pills ───
+    st.markdown("<br>", unsafe_allow_html=True)
+
+    # ─── Resume des filtres ───
     pills = [f"CA {ca_min:.0f}-{ca_max:.0f}M", region, secteur, forme, f"Limit {limit}"]
     if age_dir_min > 0 or age_dir_max > 0:
         dir_range = f"Dirigeant {age_dir_min or '?'}-{age_dir_max or '?'} ans"
@@ -362,8 +408,8 @@ def search_tab():
 
     filters_text = " | ".join(pills)
 
-    # ─── Launch ───
-    st.markdown("")
+    # ─── Bouton recherche ───
+    st.markdown("<br>", unsafe_allow_html=True)
     if st.button("Lancer la recherche", type="primary", use_container_width=True):
         run_pipeline(
             ca_min=ca_min * 1e6, ca_max=ca_max * 1e6,
@@ -425,7 +471,6 @@ def run_pipeline(ca_min, ca_max, region_code, secteur_code, forme_code,
             progress.progress(55)
             st.success(f"{len(df)} entreprises enrichies")
         else:
-            before = len(df)
             df = df[
                 (df['ca_euros'].isna()) |
                 ((df['ca_euros'] >= ca_min) & (df['ca_euros'] <= ca_max))
@@ -506,7 +551,7 @@ def show_results(df, excel_bytes, filename):
             key="m_age"
         )
 
-    st.markdown("")
+    st.markdown("<br>", unsafe_allow_html=True)
 
     # ─── Download ───
     st.download_button(
@@ -516,6 +561,8 @@ def show_results(df, excel_bytes, filename):
         mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         use_container_width=True,
     )
+
+    st.markdown("<br>", unsafe_allow_html=True)
 
     # ─── Preview table ───
     st.markdown('<div class="section-title">Apercu</div>', unsafe_allow_html=True)
