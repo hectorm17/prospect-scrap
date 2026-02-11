@@ -489,6 +489,8 @@ def run_pipeline(ca_min, ca_max, region_code, secteur_code, forme_code,
         'age_min': age_min,
         'age_dirigeant_min': age_dir_min,
         'age_dirigeant_max': age_dir_max,
+        'ca_min': ca_min,
+        'ca_max': ca_max,
         'limit': limit,
     }
 
@@ -513,21 +515,15 @@ def run_pipeline(ca_min, ca_max, region_code, secteur_code, forme_code,
         age_filled = df['age_dirigeant'].notna().sum()
         st.success(f"{len(df)} entreprises trouvees (CA: {ca_filled}/{len(df)}, Age dirigeant: {age_filled}/{len(df)})")
 
-        # 2 - Enrichissement
+        # 2 - Enrichissement (CA deja filtre par le scraper)
         if not skip_enrichment:
             status.markdown("**Enrichissement Societe.com...**")
             progress.progress(30)
             enricher = SocieteEnricher()
-            df = enricher.enrich_dataframe(df, filter_ca=True, target_limit=limit)
+            df = enricher.enrich_dataframe(df, filter_ca=False)
             progress.progress(55)
             st.success(f"{len(df)} entreprises enrichies")
         else:
-            df = df[
-                (df['ca_euros'].isna()) |
-                ((df['ca_euros'] >= ca_min) & (df['ca_euros'] <= ca_max))
-            ].copy()
-            if len(df) > limit:
-                df = df.head(limit)
             progress.progress(55)
 
         # 3 - Scoring

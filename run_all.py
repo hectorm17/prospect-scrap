@@ -62,7 +62,7 @@ def run_pipeline(custom_filtres=None):
     try:
         original_limit = filtres.get('limit', 100)
         enricher = SocieteEnricher()
-        df = enricher.enrich_dataframe(df, target_limit=original_limit)
+        df = enricher.enrich_dataframe(df, filter_ca=False)
 
         file_enriched = f"outputs/enriched_{timestamp}.xlsx"
         df.to_excel(file_enriched, index=False)

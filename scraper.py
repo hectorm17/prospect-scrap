@@ -97,17 +97,22 @@ class DataGouvScraper:
         Stratégie:
         1. Appel API avec filtres supportés (effectif, NAF, nature juridique)
         2. Post-filtrage par siège.region (l'API filtre par tout établissement)
-        3. Post-filtrage par âge
+        3. Post-filtrage par âge + CA (finances API)
         4. Déduplication par SIREN
-        5. Retourne limit * OVERFETCH_MULTIPLIER résultats
+        5. Continue à paginer jusqu'à avoir assez de résultats qualifiés
         """
         limit = filtres.get('limit', 100) or 100
-        overfetch_limit = int(limit * config.OVERFETCH_MULTIPLIER)
         region_code = filtres.get('region')
         target_depts = REGION_DEPARTEMENTS.get(region_code, []) if region_code else []
 
+        # Filtre CA — appliqué ici pour ne pas perdre de résultats après
+        ca_min = filtres.get('ca_min', 0) or 0
+        ca_max = filtres.get('ca_max', 0) or 0
+
         print(f"\n[Scraper] Recherche data.gouv.fr...")
-        print(f"  Limite cible: {limit} (overfetch: {overfetch_limit})")
+        print(f"  Limite cible: {limit}")
+        if ca_min > 0 or ca_max > 0:
+            print(f"  Filtre CA: {ca_min/1e6:.0f}M - {ca_max/1e6:.0f}M (applique dans la boucle)")
         if region_code:
             print(f"  Region: {config.REGIONS.get(region_code, region_code)} → departements siege: {target_depts}")
 
@@ -215,6 +220,15 @@ class DataGouvScraper:
                         if age_dir_max > 0 and age_dir > age_dir_max:
                             continue
 
+                    # Filtre CA (depuis finances API) — garde les CA inconnus
+                    if ca_min > 0 or ca_max > 0:
+                        company_ca, _ = self._extract_finances(company)
+                        if company_ca is not None:
+                            if ca_min > 0 and company_ca < ca_min:
+                                continue
+                            if ca_max > 0 and company_ca > ca_max:
+                                continue
+
                     seen_sirens.add(siren)
                     all_companies.append(company)
                     added += 1
@@ -222,7 +236,7 @@ class DataGouvScraper:
                 print(f"  Page {page}: {len(results)} résultats API → +{added} retenus (total: {len(all_companies)})")
 
                 # Assez de résultats ?
-                if len(all_companies) >= overfetch_limit:
+                if len(all_companies) >= limit:
                     break
 
                 # Plus de pages ?
@@ -236,7 +250,7 @@ class DataGouvScraper:
                 print(f"  Erreur page {page}: {e}")
                 break
 
-        all_companies = all_companies[:overfetch_limit]
+        all_companies = all_companies[:limit]
         print(f"  Total retenu: {len(all_companies)} entreprises uniques")
 
         return all_companies
