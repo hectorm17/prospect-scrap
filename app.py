@@ -1,6 +1,6 @@
 """
 Prospect Scraper B2B — Interface Streamlit
-Design SaaS dark mode sobre — palette bleu marine + gris + accent rouge
+Design Mirabaud : blanc, bleu marine, touches dorées
 """
 
 import streamlit as st
@@ -9,7 +9,7 @@ from datetime import datetime
 from io import BytesIO
 import os
 
-from streamlit_shadcn_ui import metric_card, badges
+from streamlit_shadcn_ui import metric_card
 
 from scraper import DataGouvScraper, TRANCHES_PME
 from enricher import SocieteEnricher
@@ -27,7 +27,7 @@ if 'search_history' not in st.session_state:
     st.session_state.search_history = []
 
 # ─────────────────────────────────────────────
-# CSS — Dark mode sobre (bleu marine + gris + rouge)
+# CSS — Palette Mirabaud (blanc + bleu marine + or)
 # ─────────────────────────────────────────────
 st.markdown("""
 <style>
@@ -35,9 +35,9 @@ st.markdown("""
 
     * { font-family: 'Inter', -apple-system, sans-serif !important; }
 
-    /* ─── Background sobre ─── */
+    /* ─── Background blanc ─── */
     .stApp {
-        background: #0f172a;
+        background: #ffffff;
     }
 
     /* ─── Hide branding ─── */
@@ -52,9 +52,9 @@ st.markdown("""
     }
 
     /* ─── Typography ─── */
-    h1, h2, h3, h4, h5, h6 { color: #e2e8f0 !important; }
-    p { color: #94a3b8 !important; }
-    label { color: #cbd5e1 !important; font-weight: 500 !important; }
+    h1, h2, h3, h4, h5, h6 { color: #002a4a !important; }
+    p { color: #4a5568 !important; }
+    label { color: #002a4a !important; font-weight: 500 !important; }
 
     /* ─── Section titles ─── */
     .section-title {
@@ -62,46 +62,47 @@ st.markdown("""
         font-weight: 600;
         text-transform: uppercase;
         letter-spacing: 0.08em;
-        color: #64748b;
+        color: #6b7280;
         margin: 1.5rem 0 0.75rem 0;
     }
 
-    /* ─── Inputs sobre ─── */
+    /* ─── Inputs ─── */
     input, select, textarea {
         border-radius: 8px !important;
-        border: 1px solid #334155 !important;
-        background: #1e293b !important;
-        color: #e2e8f0 !important;
+        border: 1px solid #d1d5db !important;
+        background: #ffffff !important;
+        color: #002a4a !important;
     }
 
     input:focus, select:focus {
-        border-color: #475569 !important;
-        box-shadow: 0 0 0 3px rgba(71, 85, 105, 0.1) !important;
+        border-color: #002a4a !important;
+        box-shadow: 0 0 0 3px rgba(0, 42, 74, 0.08) !important;
     }
 
     .stSelectbox label, .stNumberInput label, .stCheckbox label, .stTextInput label {
         font-size: 0.8rem !important;
         font-weight: 500 !important;
-        color: #cbd5e1 !important;
+        color: #002a4a !important;
     }
 
     .stSelectbox > div > div,
     .stNumberInput > div > div > input,
     .stTextInput > div > div > input {
-        background: #1e293b !important;
-        border: 1px solid #334155 !important;
+        background: #ffffff !important;
+        border: 1px solid #d1d5db !important;
         border-radius: 8px !important;
-        color: #e2e8f0 !important;
+        color: #002a4a !important;
     }
 
-    [data-baseweb="select"] { background: #1e293b !important; }
+    [data-baseweb="select"] { background: #ffffff !important; }
+    [data-baseweb="select"] * { color: #002a4a !important; }
 
     button[kind="increment"], button[kind="decrement"] {
         background: transparent !important;
-        color: #94a3b8 !important;
+        color: #6b7280 !important;
     }
 
-    /* ─── Filter pills sobre ─── */
+    /* ─── Filter pills Mirabaud ─── */
     .filter-pills {
         display: flex;
         flex-wrap: wrap;
@@ -111,24 +112,24 @@ st.markdown("""
     .pill {
         display: inline-flex;
         align-items: center;
-        background: #1e293b;
-        color: #94a3b8;
+        background: #f0f4f8;
+        color: #002a4a;
         padding: 8px 16px;
         border-radius: 6px;
         font-size: 0.8rem;
         font-weight: 500;
-        border: 1px solid #334155;
+        border: 1px solid #e2e8f0;
     }
 
-    /* ─── Tabs sobre ─── */
+    /* ─── Tabs Mirabaud ─── */
     .stTabs [data-baseweb="tab-list"] {
         background: transparent;
-        border-bottom: 1px solid #334155;
+        border-bottom: 2px solid #e2e8f0;
         gap: 8px;
     }
     .stTabs [data-baseweb="tab"] {
         background: transparent;
-        color: #94a3b8;
+        color: #6b7280;
         border: none;
         border-bottom: 2px solid transparent;
         border-radius: 8px 8px 0 0;
@@ -137,21 +138,21 @@ st.markdown("""
         font-weight: 500;
     }
     .stTabs [data-baseweb="tab"][aria-selected="true"] {
-        background: #1e293b;
-        color: #e2e8f0;
-        border-bottom: 2px solid #dc2626;
+        background: #f0f4f8;
+        color: #002a4a;
+        border-bottom: 2px solid #c5a47e;
     }
 
-    /* ─── Progress sobre ─── */
-    .stProgress > div > div { background-color: #334155; border-radius: 100px; }
+    /* ─── Progress bar gold ─── */
+    .stProgress > div > div { background-color: #e2e8f0; border-radius: 100px; }
     .stProgress > div > div > div {
-        background: #dc2626;
+        background: linear-gradient(90deg, #002a4a, #c5a47e);
         border-radius: 100px;
     }
 
-    /* ─── Primary button — rouge sobre ─── */
+    /* ─── Primary button — bleu marine ─── */
     .stButton > button[kind="primary"] {
-        background: #dc2626 !important;
+        background: #002a4a !important;
         color: #fff !important;
         border: none !important;
         border-radius: 8px !important;
@@ -161,67 +162,90 @@ st.markdown("""
         transition: all 0.2s ease !important;
     }
     .stButton > button[kind="primary"]:hover {
-        background: #b91c1c !important;
+        background: #003d6b !important;
         transform: translateY(-1px);
-        box-shadow: 0 8px 30px rgba(220, 38, 38, 0.3);
+        box-shadow: 0 8px 30px rgba(0, 42, 74, 0.25);
     }
 
-    /* ─── Download button sobre ─── */
+    /* ─── Download button ─── */
     .stDownloadButton > button {
-        background: #1e293b !important;
-        color: #e2e8f0 !important;
-        border: 1px solid #334155 !important;
+        background: #ffffff !important;
+        color: #002a4a !important;
+        border: 1px solid #d1d5db !important;
         border-radius: 8px !important;
         font-weight: 600 !important;
         font-size: 0.85rem !important;
         transition: all 0.2s ease !important;
     }
     .stDownloadButton > button:hover {
-        background: #334155 !important;
-        border-color: #475569 !important;
-        color: #f1f5f9 !important;
+        background: #f0f4f8 !important;
+        border-color: #002a4a !important;
+        color: #002a4a !important;
     }
 
-    /* ─── Expander sobre ─── */
+    /* ─── Expander Mirabaud ─── */
     .streamlit-expanderHeader {
         font-size: 0.85rem;
         font-weight: 500;
-        color: #e2e8f0 !important;
-        background: #1e293b !important;
+        color: #002a4a !important;
+        background: #f8f9fb !important;
         border-radius: 8px;
     }
 
     details {
-        border: 1px solid #334155 !important;
+        border: 1px solid #e2e8f0 !important;
         border-radius: 8px !important;
-        background: #1e293b !important;
+        background: #f8f9fb !important;
+    }
+
+    details summary {
+        background: #f8f9fb !important;
+        color: #002a4a !important;
+    }
+
+    /* Fix: hide default arrow icon artifacts */
+    details summary svg {
+        color: #002a4a !important;
+        fill: #002a4a !important;
+    }
+    details summary::marker,
+    details summary::-webkit-details-marker {
+        color: #002a4a !important;
+    }
+    details[open] summary {
+        border-bottom: 1px solid #e2e8f0;
+    }
+
+    /* Override any dark background on expander content */
+    details > div {
+        background: #f8f9fb !important;
     }
 
     /* ─── History cards ─── */
     .history-card {
-        background: #1e293b;
-        border: 1px solid #334155;
+        background: #f8f9fb;
+        border: 1px solid #e2e8f0;
         border-radius: 12px;
         padding: 1.25rem 1.5rem;
         margin-bottom: 0.75rem;
         transition: border-color 0.2s ease;
     }
     .history-card:hover {
-        border-color: #475569;
+        border-color: #c5a47e;
     }
     .history-card .meta {
         font-size: 0.75rem;
-        color: #64748b;
+        color: #6b7280;
     }
     .history-card .title {
         font-size: 0.95rem;
         font-weight: 600;
-        color: #e2e8f0;
+        color: #002a4a;
         margin: 0.15rem 0;
     }
     .history-card .filters {
         font-size: 0.75rem;
-        color: #94a3b8;
+        color: #4a5568;
     }
     .history-card .scores {
         display: flex;
@@ -237,12 +261,12 @@ st.markdown("""
     .empty-state {
         text-align: center;
         padding: 4rem 2rem;
-        color: #64748b;
+        color: #6b7280;
     }
     .empty-state .title {
         font-size: 1rem;
         font-weight: 600;
-        color: #94a3b8;
+        color: #002a4a;
     }
     .empty-state .desc {
         font-size: 0.85rem;
@@ -252,17 +276,35 @@ st.markdown("""
     /* ─── Data table ─── */
     .stDataFrame { border-radius: 8px; overflow: hidden; }
 
-    /* ─── Divider ─── */
-    hr { border-color: #334155 !important; }
+    /* ─── Divider gold ─── */
+    hr { border-color: #e2e8f0 !important; }
 
     /* ─── Toggle / Checkbox ─── */
-    .stCheckbox span { color: #cbd5e1 !important; }
+    .stCheckbox span { color: #002a4a !important; }
 
     /* ─── Alert ─── */
     .stAlert { border-radius: 8px; }
 
     /* ─── Slider ─── */
-    .stSlider > div > div > div { color: #cbd5e1 !important; }
+    .stSlider > div > div > div { color: #002a4a !important; }
+    .stSlider [data-baseweb="slider"] div[role="slider"] {
+        background: #002a4a !important;
+    }
+    .stSlider [data-baseweb="slider"] div[data-testid="stTickBar"] > div {
+        background: #c5a47e !important;
+    }
+
+    /* ─── Success / Info messages ─── */
+    .stSuccess { background: #f0f9f4; border-left-color: #002a4a; }
+
+    /* ─── Gold accent underline for header ─── */
+    .mira-header-line {
+        width: 60px;
+        height: 3px;
+        background: #c5a47e;
+        margin: 0.75rem auto 0 auto;
+        border-radius: 2px;
+    }
 </style>
 """, unsafe_allow_html=True)
 
@@ -281,30 +323,20 @@ def save_to_history(timestamp, filters_text, df, excel_bytes, filename, qualifie
 
 
 def main():
-    # ─── Header sobre ───
+    # ─── Header Mirabaud ───
     st.markdown("""
     <div style="text-align: center; padding: 3rem 0 2rem 0;">
         <h1 style="font-size: 3.5rem; font-weight: 800; margin: 0;
-            background: linear-gradient(135deg, #1e293b 0%, #334155 100%);
-            -webkit-background-clip: text; -webkit-text-fill-color: transparent;">
+            color: #002a4a !important;
+            -webkit-text-fill-color: #002a4a;">
             MiraScrap
         </h1>
-        <p style="font-size: 1.15rem; color: #94a3b8; margin-top: 0.5rem; font-weight: 500;">
+        <div class="mira-header-line"></div>
+        <p style="font-size: 1.15rem; color: #6b7280 !important; margin-top: 1rem; font-weight: 500;">
             Trouvez et qualifiez des PME francaises en quelques clics
         </p>
     </div>
     """, unsafe_allow_html=True)
-
-    col1, col2, col3 = st.columns([1, 1, 1])
-    with col2:
-        badges(
-            badge_list=[
-                ("Powered by Claude AI", "outline"),
-                ("100% Automatise", "default"),
-            ],
-            class_name="flex gap-2 justify-center",
-            key="header_badges"
-        )
 
     st.markdown("<br>", unsafe_allow_html=True)
 
@@ -618,9 +650,9 @@ def history_tab():
 
         scores_html = ""
         if scores:
-            colors = {'A': '#4ade80', 'B': '#facc15', 'C': '#f87171', 'D': '#94a3b8'}
+            colors = {'A': '#16a34a', 'B': '#c5a47e', 'C': '#dc2626', 'D': '#9ca3af'}
             scores_html = '<div class="scores">' + ''.join(
-                f'<span style="color:{colors.get(s, "#94a3b8")}">{s}: {c}</span>'
+                f'<span style="color:{colors.get(s, "#6b7280")}">{s}: {c}</span>'
                 for s, c in sorted(scores.items())
             ) + '</div>'
 
