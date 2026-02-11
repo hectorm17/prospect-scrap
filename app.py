@@ -1,6 +1,6 @@
 """
 Prospect Scraper B2B — Interface Streamlit
-Design Mirabaud : blanc, bleu marine, touches dorées
+Design Mirabaud Banking : bleu marine fonce + or/gold
 """
 
 import streamlit as st
@@ -27,17 +27,18 @@ if 'search_history' not in st.session_state:
     st.session_state.search_history = []
 
 # ─────────────────────────────────────────────
-# CSS — Palette Mirabaud (blanc + bleu marine + or)
+# CSS — Mirabaud Banking (bleu marine + gold)
 # ─────────────────────────────────────────────
 st.markdown("""
 <style>
-    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Crimson+Text:wght@400;600;700&display=swap');
 
     * { font-family: 'Inter', -apple-system, sans-serif !important; }
+    h1, h2, h3 { font-family: 'Crimson Text', serif !important; font-weight: 600 !important; }
 
-    /* ─── Background blanc ─── */
+    /* ─── Background Mirabaud dark blue ─── */
     .stApp {
-        background: #ffffff;
+        background: linear-gradient(180deg, #0a2540 0%, #1e3a5f 100%);
     }
 
     /* ─── Hide branding ─── */
@@ -48,204 +49,215 @@ st.markdown("""
     /* ─── Container ─── */
     .block-container {
         padding-top: 2rem;
-        max-width: 1200px;
+        max-width: 1400px;
     }
 
     /* ─── Typography ─── */
-    h1, h2, h3, h4, h5, h6 { color: #002a4a !important; }
-    p { color: #4a5568 !important; }
-    label { color: #002a4a !important; font-weight: 500 !important; }
+    h1 { color: #e8e6e3 !important; font-size: 3.5rem !important; }
+    h2, h3 { color: #e8e6e3 !important; }
+    h4, h5, h6 { color: #c9a961 !important; }
+    p { color: #94a3b8 !important; }
+    label {
+        color: #e8e6e3 !important;
+        font-weight: 500 !important;
+        font-size: 14px !important;
+        text-transform: uppercase !important;
+        letter-spacing: 0.5px !important;
+    }
 
     /* ─── Section titles ─── */
     .section-title {
         font-size: 0.7rem;
         font-weight: 600;
         text-transform: uppercase;
-        letter-spacing: 0.08em;
-        color: #6b7280;
+        letter-spacing: 1px;
+        color: #c9a961;
         margin: 1.5rem 0 0.75rem 0;
     }
 
-    /* ─── Inputs ─── */
+    /* ─── Inputs Mirabaud ─── */
     input, select, textarea {
-        border-radius: 8px !important;
-        border: 1px solid #d1d5db !important;
-        background: #ffffff !important;
-        color: #002a4a !important;
+        border-radius: 4px !important;
+        border: 1px solid #2d5a8c !important;
+        background: #1e3a5f !important;
+        color: #e8e6e3 !important;
+        padding: 14px !important;
+        font-size: 15px !important;
     }
 
     input:focus, select:focus {
-        border-color: #002a4a !important;
-        box-shadow: 0 0 0 3px rgba(0, 42, 74, 0.08) !important;
+        border-color: #c9a961 !important;
+        box-shadow: 0 0 0 2px rgba(201, 169, 97, 0.2) !important;
+        outline: none !important;
     }
 
     .stSelectbox label, .stNumberInput label, .stCheckbox label, .stTextInput label {
-        font-size: 0.8rem !important;
+        font-size: 13px !important;
         font-weight: 500 !important;
-        color: #002a4a !important;
+        color: #e8e6e3 !important;
+        text-transform: uppercase !important;
+        letter-spacing: 0.5px !important;
     }
 
     .stSelectbox > div > div,
     .stNumberInput > div > div > input,
     .stTextInput > div > div > input {
-        background: #ffffff !important;
-        border: 1px solid #d1d5db !important;
-        border-radius: 8px !important;
-        color: #002a4a !important;
+        background: #1e3a5f !important;
+        border: 1px solid #2d5a8c !important;
+        border-radius: 4px !important;
+        color: #e8e6e3 !important;
     }
 
-    [data-baseweb="select"] { background: #ffffff !important; }
-    [data-baseweb="select"] * { color: #002a4a !important; }
+    [data-baseweb="select"] { background: #1e3a5f !important; }
+    [data-baseweb="select"] * { color: #e8e6e3 !important; }
 
     button[kind="increment"], button[kind="decrement"] {
-        background: transparent !important;
-        color: #6b7280 !important;
+        background: #2d5a8c !important;
+        color: #e8e6e3 !important;
+        border: none !important;
+    }
+    button[kind="increment"]:hover, button[kind="decrement"]:hover {
+        background: #3d6a9c !important;
     }
 
     /* ─── Filter pills Mirabaud ─── */
     .filter-pills {
         display: flex;
         flex-wrap: wrap;
-        gap: 10px;
-        margin: 1rem 0 1.5rem 0;
+        gap: 12px;
+        margin: 24px 0;
     }
     .pill {
         display: inline-flex;
         align-items: center;
-        background: #f0f4f8;
-        color: #002a4a;
-        padding: 8px 16px;
-        border-radius: 6px;
-        font-size: 0.8rem;
+        background: #1e3a5f;
+        color: #e8e6e3;
+        padding: 10px 20px;
+        border-radius: 4px;
+        font-size: 13px;
         font-weight: 500;
-        border: 1px solid #e2e8f0;
+        border: 1px solid #2d5a8c;
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+    }
+    .pill-accent {
+        background: #c9a961;
+        color: #0a2540;
+        border: none;
+        font-weight: 600;
     }
 
-    /* ─── Tabs Mirabaud ─── */
+    /* ─── Tabs Mirabaud corporate ─── */
     .stTabs [data-baseweb="tab-list"] {
+        gap: 4px;
         background: transparent;
-        border-bottom: 2px solid #e2e8f0;
-        gap: 8px;
+        border-bottom: 2px solid #2d5a8c;
     }
     .stTabs [data-baseweb="tab"] {
+        border-radius: 0;
+        padding: 16px 28px;
         background: transparent;
-        color: #6b7280;
+        color: #94a3b8;
         border: none;
-        border-bottom: 2px solid transparent;
-        border-radius: 8px 8px 0 0;
-        padding: 12px 24px;
-        font-size: 0.85rem;
         font-weight: 500;
+        text-transform: uppercase;
+        letter-spacing: 1px;
+        font-size: 13px;
+    }
+    .stTabs [data-baseweb="tab"]:hover {
+        color: #c9a961;
     }
     .stTabs [data-baseweb="tab"][aria-selected="true"] {
-        background: #f0f4f8;
-        color: #002a4a;
-        border-bottom: 2px solid #c5a47e;
+        background: transparent;
+        color: #e8e6e3;
+        border-bottom: 3px solid #c9a961;
     }
 
     /* ─── Progress bar gold ─── */
-    .stProgress > div > div { background-color: #e2e8f0; border-radius: 100px; }
+    .stProgress > div > div { background-color: #2d5a8c; border-radius: 100px; }
     .stProgress > div > div > div {
-        background: linear-gradient(90deg, #002a4a, #c5a47e);
+        background: #c9a961 !important;
         border-radius: 100px;
     }
 
-    /* ─── Primary button — bleu marine ─── */
+    /* ─── Primary button — gold CTA ─── */
     .stButton > button[kind="primary"] {
-        background: #002a4a !important;
-        color: #fff !important;
+        background: #c9a961 !important;
+        color: #0a2540 !important;
         border: none !important;
-        border-radius: 8px !important;
+        border-radius: 4px !important;
         font-weight: 600 !important;
-        font-size: 0.9rem !important;
-        padding: 12px 24px !important;
-        transition: all 0.2s ease !important;
+        font-size: 16px !important;
+        padding: 16px 32px !important;
+        letter-spacing: 0.5px !important;
+        text-transform: uppercase !important;
+        transition: all 0.3s ease !important;
     }
     .stButton > button[kind="primary"]:hover {
-        background: #003d6b !important;
-        transform: translateY(-1px);
-        box-shadow: 0 8px 30px rgba(0, 42, 74, 0.25);
+        background: #d4b76d !important;
+        transform: translateY(-2px);
+        box-shadow: 0 8px 24px rgba(201, 169, 97, 0.3);
     }
 
     /* ─── Download button ─── */
     .stDownloadButton > button {
-        background: #ffffff !important;
-        color: #002a4a !important;
-        border: 1px solid #d1d5db !important;
-        border-radius: 8px !important;
+        background: #1e3a5f !important;
+        color: #e8e6e3 !important;
+        border: 1px solid #2d5a8c !important;
+        border-radius: 4px !important;
         font-weight: 600 !important;
         font-size: 0.85rem !important;
-        transition: all 0.2s ease !important;
+        text-transform: uppercase !important;
+        letter-spacing: 0.5px !important;
+        transition: all 0.3s ease !important;
     }
     .stDownloadButton > button:hover {
-        background: #f0f4f8 !important;
-        border-color: #002a4a !important;
-        color: #002a4a !important;
+        background: #2d5a8c !important;
+        border-color: #c9a961 !important;
+        color: #e8e6e3 !important;
     }
 
-    /* ─── Expander Mirabaud ─── */
-    .streamlit-expanderHeader {
-        font-size: 0.85rem;
-        font-weight: 500;
-        color: #002a4a !important;
-        background: #f8f9fb !important;
+    /* ─── Checkbox / Toggle ─── */
+    .stCheckbox span { color: #e8e6e3 !important; }
+    input[type="checkbox"] {
+        width: 20px !important;
+        height: 20px !important;
+    }
+
+    /* ─── Advanced options container ─── */
+    .advanced-container {
+        background: #1e3a5f;
+        padding: 24px;
         border-radius: 8px;
-    }
-
-    details {
-        border: 1px solid #e2e8f0 !important;
-        border-radius: 8px !important;
-        background: #f8f9fb !important;
-    }
-
-    details summary {
-        background: #f8f9fb !important;
-        color: #002a4a !important;
-    }
-
-    /* Fix: hide default arrow icon artifacts */
-    details summary svg {
-        color: #002a4a !important;
-        fill: #002a4a !important;
-    }
-    details summary::marker,
-    details summary::-webkit-details-marker {
-        color: #002a4a !important;
-    }
-    details[open] summary {
-        border-bottom: 1px solid #e2e8f0;
-    }
-
-    /* Override any dark background on expander content */
-    details > div {
-        background: #f8f9fb !important;
+        border: 1px solid #2d5a8c;
+        margin-top: 8px;
     }
 
     /* ─── History cards ─── */
     .history-card {
-        background: #f8f9fb;
-        border: 1px solid #e2e8f0;
-        border-radius: 12px;
+        background: #1e3a5f;
+        border: 1px solid #2d5a8c;
+        border-radius: 8px;
         padding: 1.25rem 1.5rem;
         margin-bottom: 0.75rem;
-        transition: border-color 0.2s ease;
+        transition: border-color 0.3s ease;
     }
     .history-card:hover {
-        border-color: #c5a47e;
+        border-color: #c9a961;
     }
     .history-card .meta {
         font-size: 0.75rem;
-        color: #6b7280;
+        color: #94a3b8;
     }
     .history-card .title {
         font-size: 0.95rem;
         font-weight: 600;
-        color: #002a4a;
+        color: #e8e6e3;
         margin: 0.15rem 0;
     }
     .history-card .filters {
         font-size: 0.75rem;
-        color: #4a5568;
+        color: #94a3b8;
     }
     .history-card .scores {
         display: flex;
@@ -261,12 +273,12 @@ st.markdown("""
     .empty-state {
         text-align: center;
         padding: 4rem 2rem;
-        color: #6b7280;
+        color: #94a3b8;
     }
     .empty-state .title {
         font-size: 1rem;
         font-weight: 600;
-        color: #002a4a;
+        color: #e8e6e3;
     }
     .empty-state .desc {
         font-size: 0.85rem;
@@ -276,35 +288,25 @@ st.markdown("""
     /* ─── Data table ─── */
     .stDataFrame { border-radius: 8px; overflow: hidden; }
 
-    /* ─── Divider gold ─── */
-    hr { border-color: #e2e8f0 !important; }
-
-    /* ─── Toggle / Checkbox ─── */
-    .stCheckbox span { color: #002a4a !important; }
+    /* ─── Divider ─── */
+    hr { border-color: #2d5a8c !important; }
 
     /* ─── Alert ─── */
-    .stAlert { border-radius: 8px; }
+    .stAlert {
+        background: #1e3a5f !important;
+        border-left: 4px solid #c9a961 !important;
+        color: #e8e6e3 !important;
+        border-radius: 4px;
+    }
 
     /* ─── Slider ─── */
-    .stSlider > div > div > div { color: #002a4a !important; }
+    .stSlider > div > div > div { color: #e8e6e3 !important; }
     .stSlider [data-baseweb="slider"] div[role="slider"] {
-        background: #002a4a !important;
-    }
-    .stSlider [data-baseweb="slider"] div[data-testid="stTickBar"] > div {
-        background: #c5a47e !important;
+        background: #c9a961 !important;
     }
 
-    /* ─── Success / Info messages ─── */
-    .stSuccess { background: #f0f9f4; border-left-color: #002a4a; }
-
-    /* ─── Gold accent underline for header ─── */
-    .mira-header-line {
-        width: 60px;
-        height: 3px;
-        background: #c5a47e;
-        margin: 0.75rem auto 0 auto;
-        border-radius: 2px;
-    }
+    /* ─── Metric cards override ─── */
+    [data-testid="stMetricValue"] { color: #e8e6e3 !important; }
 </style>
 """, unsafe_allow_html=True)
 
@@ -323,17 +325,21 @@ def save_to_history(timestamp, filters_text, df, excel_bytes, filename, qualifie
 
 
 def main():
-    # ─── Header Mirabaud ───
+    # ─── Header Mirabaud Banking ───
     st.markdown("""
-    <div style="text-align: center; padding: 3rem 0 2rem 0;">
-        <h1 style="font-size: 3.5rem; font-weight: 800; margin: 0;
-            color: #002a4a !important;
-            -webkit-text-fill-color: #002a4a;">
+    <div style="text-align: center; padding: 4rem 0 3rem 0; background: linear-gradient(180deg, rgba(10, 37, 64, 0) 0%, rgba(30, 58, 95, 0.3) 100%);">
+        <h1 style="font-size: 4.5rem; font-weight: 700; margin: 0; color: #e8e6e3 !important;
+            font-family: 'Crimson Text', serif !important; letter-spacing: 2px;
+            -webkit-text-fill-color: #e8e6e3;">
             MiraScrap
         </h1>
-        <div class="mira-header-line"></div>
-        <p style="font-size: 1.15rem; color: #6b7280 !important; margin-top: 1rem; font-weight: 500;">
+        <div style="width: 80px; height: 3px; background: #c9a961; margin: 1.5rem auto;"></div>
+        <p style="font-size: 1.2rem; color: #94a3b8 !important; margin-top: 1rem; font-weight: 400; letter-spacing: 0.5px;">
             Trouvez et qualifiez des PME francaises en quelques clics
+        </p>
+        <p style="font-size: 0.95rem; color: #c9a961 !important; margin-top: 0.5rem; font-weight: 500;
+            text-transform: uppercase; letter-spacing: 1px;">
+            Powered by Claude AI
         </p>
     </div>
     """, unsafe_allow_html=True)
@@ -389,56 +395,69 @@ def search_tab():
 
     st.markdown("<br><br>", unsafe_allow_html=True)
 
-    # ─── Options avancees ───
-    with st.expander("Options avancees", expanded=False):
+    # ─── Options avancees (checkbox toggle, pas d'expander) ───
+    show_advanced = st.checkbox("Afficher les options avancees", value=False, key="show_advanced")
+
+    age_min = 3
+    age_dir_min = 0
+    age_dir_max = 0
+    enable_ia = False
+    api_key = ""
+    skip_enrichment = False
+
+    if show_advanced:
         st.markdown("<br>", unsafe_allow_html=True)
 
-        age_min = st.slider("Age minimum entreprise (annees)", 0, 50, 3)
+        col1, col2 = st.columns(2)
+        with col1:
+            age_min = st.slider("Age minimum entreprise (annees)", 0, 50, 3, key="age_min_entreprise")
+        with col2:
+            age_dir_min = st.number_input("Age min dirigeant", min_value=0, max_value=90, value=0,
+                                          help="0 = pas de filtre", key="age_min_dirigeant")
 
         st.markdown("<br>", unsafe_allow_html=True)
 
-        col_dir1, col_dir2 = st.columns(2)
-        with col_dir1:
-            age_dir_min = st.number_input("Age min dirigeant", min_value=0, max_value=99, value=0, help="0 = pas de filtre")
-        with col_dir2:
-            age_dir_max = st.number_input("Age max dirigeant", min_value=0, max_value=99, value=0, help="0 = pas de filtre")
+        col1, col2 = st.columns(2)
+        with col1:
+            age_dir_max = st.number_input("Age max dirigeant", min_value=0, max_value=90, value=0,
+                                          help="0 = pas de filtre", key="age_max_dirigeant")
+        with col2:
+            pass
 
         st.markdown("<br>", unsafe_allow_html=True)
 
-        enable_ia = st.toggle(
-            "Qualification IA (Claude)",
-            value=False,
-            help="Scoring automatique par defaut. Active l'IA pour une analyse plus riche (~3s/entreprise)."
-        )
+        enable_ia = st.checkbox("Qualification IA (Claude)", value=False, key="qualification_ia",
+                                help="Analyse intelligente avec scoring A/B/C/D")
 
-        api_key = ""
         if enable_ia:
-            st.markdown("---")
+            st.markdown("<br>", unsafe_allow_html=True)
             api_key = st.text_input(
                 "Cle API Anthropic",
                 value=config.ANTHROPIC_API_KEY or "",
                 type="password",
                 placeholder="sk-ant-api03-...",
-                help="Necessaire pour la qualification IA",
+                key="api_key",
+                help="Obtenez votre cle sur console.anthropic.com",
             )
             if not api_key:
                 st.warning("Cle API requise pour activer la qualification IA")
 
         st.markdown("<br>", unsafe_allow_html=True)
 
-        skip_enrichment = st.checkbox("Sauter l'enrichissement Societe.com")
+        skip_enrichment = st.checkbox("Sauter l'enrichissement Societe.com", value=False, key="skip_enrichment")
 
     st.markdown("<br>", unsafe_allow_html=True)
 
-    # ─── Resume des filtres ───
-    pills = [f"CA {ca_min:.0f}-{ca_max:.0f}M", region, secteur, forme, f"Limit {limit}"]
+    # ─── Resume des filtres — Mirabaud style badges ───
+    pills = [f"CA {ca_min:.0f}-{ca_max:.0f}M", region, secteur, forme]
     if age_dir_min > 0 or age_dir_max > 0:
         dir_range = f"Dirigeant {age_dir_min or '?'}-{age_dir_max or '?'} ans"
         pills.append(dir_range)
     pills_html = ''.join(f'<span class="pill">{p}</span>' for p in pills)
+    pills_html += f'<span class="pill pill-accent">{limit} entreprises</span>'
     st.markdown(f'<div class="filter-pills">{pills_html}</div>', unsafe_allow_html=True)
 
-    filters_text = " | ".join(pills)
+    filters_text = " | ".join(pills + [f"Limit {limit}"])
 
     # ─── Bouton recherche ───
     st.markdown("<br>", unsafe_allow_html=True)
@@ -650,9 +669,9 @@ def history_tab():
 
         scores_html = ""
         if scores:
-            colors = {'A': '#16a34a', 'B': '#c5a47e', 'C': '#dc2626', 'D': '#9ca3af'}
+            colors = {'A': '#4ade80', 'B': '#c9a961', 'C': '#f87171', 'D': '#94a3b8'}
             scores_html = '<div class="scores">' + ''.join(
-                f'<span style="color:{colors.get(s, "#6b7280")}">{s}: {c}</span>'
+                f'<span style="color:{colors.get(s, "#94a3b8")}">{s}: {c}</span>'
                 for s, c in sorted(scores.items())
             ) + '</div>'
 
