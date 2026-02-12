@@ -526,6 +526,10 @@ def run_pipeline(ca_min, ca_max, region_code, secteur_code, forme_code,
         else:
             progress.progress(55)
 
+        # Securite : tronquer au nombre demande
+        if len(df) > limit:
+            df = df.head(limit).copy()
+
         # 3 - Scoring
         if enable_ia and api_key:
             status.markdown("**Qualification IA (Claude)...**")
