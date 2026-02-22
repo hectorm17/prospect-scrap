@@ -11,6 +11,7 @@ from io import BytesIO
 from typing import Dict
 from tqdm import tqdm
 from datetime import datetime
+from PIL import Image as PILImage
 import time
 import json
 import re
@@ -398,17 +399,13 @@ def format_excel_output(df: pd.DataFrame, output_file: str = None) -> bytes:
             }),
         }
 
-        # Find logo column index
+        # Find logo column and download/resize favicons to 24x24
         logo_col_idx = None
         for i, col_name in enumerate(df_final.columns):
             if col_name == 'Logo':
                 logo_col_idx = i
                 break
 
-        for col_num, value in enumerate(df_final.columns.values):
-            ws.write(0, col_num, value, header_fmt)
-
-        # Download favicons for logo insertion
         logo_images = {}
         if logo_col_idx is not None:
             session = requests.Session()
@@ -417,10 +414,18 @@ def format_excel_output(df: pd.DataFrame, output_file: str = None) -> bytes:
                 if url and str(url).startswith('http'):
                     try:
                         r = session.get(str(url), timeout=5)
-                        if len(r.content) > 100:  # Any valid image
-                            logo_images[row_num] = BytesIO(r.content)
+                        if len(r.content) > 100:
+                            img = PILImage.open(BytesIO(r.content))
+                            img = img.resize((24, 24), PILImage.LANCZOS)
+                            buf = BytesIO()
+                            img.save(buf, format='PNG')
+                            buf.seek(0)
+                            logo_images[row_num] = buf
                     except Exception:
                         pass
+
+        for col_num, value in enumerate(df_final.columns.values):
+            ws.write(0, col_num, value, header_fmt)
 
         for row_num in range(len(df_final)):
             row_data = df_final.iloc[row_num]
@@ -430,14 +435,14 @@ def format_excel_output(df: pd.DataFrame, output_file: str = None) -> bytes:
                     fmt = score_fmts.get(val, score_fmts['D'])
                     ws.write(row_num + 1, col_num, val, fmt)
                 elif col_name == 'Logo':
-                    # Insert image if available, otherwise leave empty
                     if row_num in logo_images:
                         ws.write(row_num + 1, col_num, '', cell_fmt)
-                        ws.insert_image(row_num + 1, col_num, 'favicon.png', {
+                        ws.insert_image(row_num + 1, col_num, 'logo.png', {
                             'image_data': logo_images[row_num],
-                            'x_offset': 4, 'y_offset': 4,
-                            'x_scale': 1, 'y_scale': 1,
+                            'x_offset': 3, 'y_offset': 3,
+                            'object_position': 1,
                         })
+                        ws.set_row(row_num + 1, 30)
                     else:
                         ws.write(row_num + 1, col_num, '', cell_fmt)
                 elif col_name in ["Chiffre d'Affaires (M)", "Resultat Net (M)"]:
@@ -449,7 +454,7 @@ def format_excel_output(df: pd.DataFrame, output_file: str = None) -> bytes:
                     ws.write(row_num + 1, col_num, str(val) if pd.notna(val) else '', cell_fmt)
 
         widths = {
-            'Score': 7, 'Qualification': 30, 'Entreprise': 35, 'Logo': 6,
+            'Score': 7, 'Qualification': 30, 'Entreprise': 35, 'Logo': 5,
             "Chiffre d'Affaires (M)": 18, 'Evolution CA': 22,
             'Resultat Net (M)': 16, 'Activite': 50,
             'Dirigeant Principal': 25, 'Age Dirigeant': 12, 'Telephone': 14, 'Email': 25,
@@ -461,11 +466,6 @@ def format_excel_output(df: pd.DataFrame, output_file: str = None) -> bytes:
         }
         for col_num, col_name in enumerate(df_final.columns):
             ws.set_column(col_num, col_num, widths.get(col_name, 15))
-
-        # Set row heights for logo images
-        for row_num in range(len(df_final)):
-            if row_num in logo_images:
-                ws.set_row(row_num + 1, 36)
 
         ws.freeze_panes(1, 0)
         ws.autofilter(0, 0, len(df_final), len(df_final.columns) - 1)
