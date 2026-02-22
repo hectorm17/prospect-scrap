@@ -320,6 +320,13 @@ def format_excel_output(df: pd.DataFrame, output_file: str = None) -> bytes:
             axis=1
         )
 
+    # Nom du fichier lettre .docx (correspond a LetterGenerator.generate_filename)
+    df_export['lettre_fichier'] = df_export.apply(
+        lambda r: "lettres/Lettre_{}.docx".format(
+            re.sub(r'\s+', '_', re.sub(r'[^\w\s-]', '', str(r.get('nom_entreprise', 'prospect'))).strip())[:50]
+        ), axis=1
+    )
+
     column_map = [
         ('score', 'Score'),
         ('score_label', 'Qualification'),
@@ -334,6 +341,7 @@ def format_excel_output(df: pd.DataFrame, output_file: str = None) -> bytes:
         ('telephone', 'Telephone'),
         ('email', 'Email'),
         ('site_web', 'Site Web'),
+        ('lettre_fichier', 'Lettre'),
         ('adresse_complete', 'Adresse du Siege'),
         ('ville', 'Ville'),
         ('region', 'Region'),
@@ -458,7 +466,7 @@ def format_excel_output(df: pd.DataFrame, output_file: str = None) -> bytes:
             "Chiffre d'Affaires (M)": 18, 'Evolution CA': 22,
             'Resultat Net (M)': 16, 'Activite': 50,
             'Dirigeant Principal': 25, 'Age Dirigeant': 12, 'Telephone': 14, 'Email': 25,
-            'Site Web': 25, 'Adresse du Siege': 35, 'Ville': 15,
+            'Site Web': 25, 'Lettre': 30, 'Adresse du Siege': 35, 'Ville': 15,
             'Region': 18, 'Effectif': 18, 'Date de Creation': 14,
             'Forme Juridique': 14, 'SIREN': 12, 'Fiche Pappers': 40,
             'Fiche Data.gouv': 45, 'Resume Activite': 40, 'Analyse M&A': 40,

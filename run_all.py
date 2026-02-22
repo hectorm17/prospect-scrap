@@ -5,10 +5,12 @@ Usage: python run_all.py
 
 import os
 import sys
+import zipfile
 from datetime import datetime
 from scraper import DataGouvScraper
 from enricher import SocieteEnricher
 from qualifier import AutoScorer, ProspectQualifier, format_excel_output
+from letter_generator import LetterGenerator
 import config
 
 
@@ -32,7 +34,7 @@ def run_pipeline(custom_filtres=None):
     # ================================================
     # ETAPE 1 : SCRAPING DATA.GOUV (CA + dirigeant + age)
     # ================================================
-    print("\n ETAPE 1/4 : Scraping data.gouv.fr (CA, dirigeants, finances)")
+    print("\n ETAPE 1/5 : Scraping data.gouv.fr (CA, dirigeants, finances)")
     print("-" * 60)
 
     try:
@@ -56,7 +58,7 @@ def run_pipeline(custom_filtres=None):
     # ================================================
     # ETAPE 2 : ENRICHISSEMENT API JSON + SITE WEB
     # ================================================
-    print("\n ETAPE 2/4 : Enrichissement API JSON + recherche site web")
+    print("\n ETAPE 2/5 : Enrichissement API JSON + recherche site web")
     print("-" * 60)
 
     try:
@@ -73,7 +75,7 @@ def run_pipeline(custom_filtres=None):
     # ================================================
     # ETAPE 3 : SCORING
     # ================================================
-    print("\n ETAPE 3/4 : Scoring")
+    print("\n ETAPE 3/5 : Scoring")
     print("-" * 60)
 
     has_api_key = config.ANTHROPIC_API_KEY and config.ANTHROPIC_API_KEY != "sk-ant-xxxxx"
@@ -95,11 +97,33 @@ def run_pipeline(custom_filtres=None):
     # ================================================
     # ETAPE 4 : EXPORT EXCEL
     # ================================================
-    print("\n ETAPE 4/4 : Export Excel")
+    print("\n ETAPE 4/5 : Export Excel")
     print("-" * 60)
 
     file_final = f"outputs/prospects_{timestamp}.xlsx"
-    format_excel_output(df, file_final)
+    excel_bytes = format_excel_output(df, file_final)
+
+    # ================================================
+    # ETAPE 5 : GENERATION LETTRES + ZIP
+    # ================================================
+    print("\n ETAPE 5/5 : Generation lettres Word + ZIP")
+    print("-" * 60)
+
+    lettres_dir = f"outputs/lettres_{timestamp}"
+    gen = LetterGenerator(output_dir=lettres_dir)
+    letter_files = gen.generate_all(df)
+
+    print(f"  {len(letter_files)} lettres generees dans {lettres_dir}/")
+
+    # ZIP
+    zip_path = f"outputs/MiraScrap_{timestamp}.zip"
+    with zipfile.ZipFile(zip_path, 'w', zipfile.ZIP_DEFLATED) as zf:
+        zf.write(file_final, "prospects.xlsx")
+        for letter_path in letter_files:
+            letter_name = os.path.basename(letter_path)
+            zf.write(letter_path, f"lettres/{letter_name}")
+
+    print(f"  ZIP : {zip_path}")
 
     # Resume
     print("\n" + "="*60)
@@ -115,7 +139,9 @@ def run_pipeline(custom_filtres=None):
             label = config.SCORING_CATEGORIES.get(score, '')
             print(f"   {score} - {label} : {count}")
 
-    print(f"\n Fichier : {file_final}")
+    print(f"\n Excel  : {file_final}")
+    print(f"   Lettres : {lettres_dir}/")
+    print(f"   ZIP     : {zip_path}")
     print("="*60 + "\n")
 
     return file_final

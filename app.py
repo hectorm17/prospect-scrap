@@ -11,9 +11,12 @@ import os
 
 from streamlit_shadcn_ui import metric_card
 
+import zipfile
+
 from scraper import DataGouvScraper, TRANCHES_PME
 from enricher import SocieteEnricher
 from qualifier import AutoScorer, ProspectQualifier, format_excel_output
+from letter_generator import LetterGenerator
 import config
 
 st.set_page_config(
@@ -311,7 +314,7 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 
-def save_to_history(timestamp, filters_text, df, excel_bytes, filename, qualified):
+def save_to_history(timestamp, filters_text, df, excel_bytes, filename, qualified, zip_bytes=None, zip_filename=None):
     st.session_state.search_history.insert(0, {
         'timestamp': timestamp,
         'date_str': datetime.now().strftime("%d/%m/%Y %H:%M"),
@@ -321,6 +324,8 @@ def save_to_history(timestamp, filters_text, df, excel_bytes, filename, qualifie
         'excel_bytes': excel_bytes,
         'filename': filename,
         'qualified': qualified,
+        'zip_bytes': zip_bytes,
+        'zip_filename': zip_filename,
     })
 
 
@@ -547,15 +552,32 @@ def run_pipeline(ca_min, ca_max, region_code, secteur_code, forme_code,
             progress.progress(90)
             st.success("Prospects scores automatiquement")
 
-        # 4 - Export
+        # 4 - Export Excel
         status.markdown("**Generation Excel...**")
         excel_bytes = format_excel_output(df)
         filename = f"prospects_{timestamp}.xlsx"
+        progress.progress(95)
+
+        # 5 - Generation lettres + ZIP
+        status.markdown("**Generation des lettres de prospection...**")
+        gen = LetterGenerator()
+        zip_buffer = BytesIO()
+        with zipfile.ZipFile(zip_buffer, 'w', zipfile.ZIP_DEFLATED) as zf:
+            zf.writestr(f"prospects.xlsx", excel_bytes)
+            for _, row in df.iterrows():
+                prospect = row.to_dict()
+                letter_buf = gen.generate_letter(prospect)
+                letter_name = gen.generate_filename(prospect)
+                zf.writestr(f"lettres/{letter_name}", letter_buf.getvalue())
+        zip_buffer.seek(0)
+        zip_bytes = zip_buffer.getvalue()
+        zip_filename = f"MiraScrap_{timestamp}.zip"
+
         progress.progress(100)
         status.empty()
 
-        save_to_history(timestamp, filters_text, df, excel_bytes, filename, qualified=enable_ia)
-        show_results(df, excel_bytes, filename)
+        save_to_history(timestamp, filters_text, df, excel_bytes, filename, qualified=enable_ia, zip_bytes=zip_bytes, zip_filename=zip_filename)
+        show_results(df, excel_bytes, filename, zip_bytes=zip_bytes, zip_filename=zip_filename)
 
     except Exception as e:
         st.error(f"Erreur : {e}")
@@ -563,7 +585,7 @@ def run_pipeline(ca_min, ca_max, region_code, secteur_code, forme_code,
         st.code(traceback.format_exc())
 
 
-def show_results(df, excel_bytes, filename):
+def show_results(df, excel_bytes, filename, zip_bytes=None, zip_filename=None):
     """Affiche les resultats apres pipeline"""
     st.markdown("---")
     st.markdown("### Resultats")
@@ -605,9 +627,18 @@ def show_results(df, excel_bytes, filename):
 
     st.markdown("<br>", unsafe_allow_html=True)
 
-    # ─── Download ───
+    # ─── Downloads ───
+    if zip_bytes:
+        st.download_button(
+            label="Telecharger ZIP (Excel + Lettres Word)",
+            data=zip_bytes,
+            file_name=zip_filename,
+            mime="application/zip",
+            use_container_width=True,
+        )
+
     st.download_button(
-        label="Telecharger Excel",
+        label="Telecharger Excel seul",
         data=excel_bytes,
         file_name=filename,
         mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
@@ -686,13 +717,32 @@ def history_tab():
         </div>
         """, unsafe_allow_html=True)
 
-        st.download_button(
-            label="Telecharger",
-            data=entry['excel_bytes'],
-            file_name=entry['filename'],
-            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-            key=f"dl_{i}_{entry['timestamp']}",
-        )
+        if entry.get('zip_bytes'):
+            dl_col1, dl_col2 = st.columns(2)
+            with dl_col1:
+                st.download_button(
+                    label="ZIP (Excel + Lettres)",
+                    data=entry['zip_bytes'],
+                    file_name=entry.get('zip_filename', entry['filename'].replace('.xlsx', '.zip')),
+                    mime="application/zip",
+                    key=f"dlzip_{i}_{entry['timestamp']}",
+                )
+            with dl_col2:
+                st.download_button(
+                    label="Excel seul",
+                    data=entry['excel_bytes'],
+                    file_name=entry['filename'],
+                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                    key=f"dl_{i}_{entry['timestamp']}",
+                )
+        else:
+            st.download_button(
+                label="Telecharger",
+                data=entry['excel_bytes'],
+                file_name=entry['filename'],
+                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                key=f"dl_{i}_{entry['timestamp']}",
+            )
 
 
 if __name__ == "__main__":
