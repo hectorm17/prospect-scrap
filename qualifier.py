@@ -388,6 +388,11 @@ def format_excel_output(df: pd.DataFrame, output_file: str = None) -> bytes:
             'border': 1, 'text_wrap': True, 'valign': 'vcenter',
             'font_name': 'Calibri', 'font_size': 10,
         })
+        link_fmt = wb.add_format({
+            'border': 1, 'font_color': '#0066CC', 'underline': True,
+            'valign': 'vcenter', 'align': 'center',
+            'font_name': 'Calibri', 'font_size': 10,
+        })
         score_fmts = {
             'A': wb.add_format({
                 'bold': True, 'bg_color': '#27ae60', 'font_color': 'white',
@@ -453,6 +458,17 @@ def format_excel_output(df: pd.DataFrame, output_file: str = None) -> bytes:
                         ws.set_row(row_num + 1, 30)
                     else:
                         ws.write(row_num + 1, col_num, '', cell_fmt)
+                elif col_name == 'Lettre':
+                    link_path = str(val) if pd.notna(val) and val else ''
+                    if link_path:
+                        ws.write_url(
+                            row_num + 1, col_num,
+                            f"external:{link_path}",
+                            link_fmt,
+                            "Ouvrir la lettre",
+                        )
+                    else:
+                        ws.write(row_num + 1, col_num, '', cell_fmt)
                 elif col_name in ["Chiffre d'Affaires (M)", "Resultat Net (M)"]:
                     if pd.notna(val) and val != '':
                         ws.write_number(row_num + 1, col_num, float(val), money_fmt)
@@ -466,7 +482,7 @@ def format_excel_output(df: pd.DataFrame, output_file: str = None) -> bytes:
             "Chiffre d'Affaires (M)": 18, 'Evolution CA': 22,
             'Resultat Net (M)': 16, 'Activite': 50,
             'Dirigeant Principal': 25, 'Age Dirigeant': 12, 'Telephone': 14, 'Email': 25,
-            'Site Web': 25, 'Lettre': 30, 'Adresse du Siege': 35, 'Ville': 15,
+            'Site Web': 25, 'Lettre': 20, 'Adresse du Siege': 35, 'Ville': 15,
             'Region': 18, 'Effectif': 18, 'Date de Creation': 14,
             'Forme Juridique': 14, 'SIREN': 12, 'Fiche Pappers': 40,
             'Fiche Data.gouv': 45, 'Resume Activite': 40, 'Analyse M&A': 40,
