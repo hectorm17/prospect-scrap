@@ -13,15 +13,6 @@ from datetime import datetime
 from tqdm import tqdm
 import config
 
-# Log visible dans Streamlit Cloud
-def _log(msg: str):
-    print(msg)
-    try:
-        import streamlit as st
-        st.text(msg)
-    except Exception:
-        pass
-
 
 class CompanyEnricher:
     """Enrichit les entreprises via API JSON officielle + recherche site web"""
@@ -133,7 +124,7 @@ class CompanyEnricher:
             try:
                 domain = urlparse(result['site_web']).netloc.replace('www.', '')
                 if domain:
-                    result['logo_url'] = f"https://logo.clearbit.com/{domain}"
+                    result['logo_url'] = f"https://www.google.com/s2/favicons?domain={domain}&sz=128"
             except Exception:
                 pass
 
@@ -148,12 +139,12 @@ class CompanyEnricher:
 
         nom_court = nom_entreprise.split('(')[0].strip()
         sigles = self._extract_sigles(nom_entreprise)
-        _log(f"[SITE] Recherche pour: {nom_court} (sigles={sigles}, ville={ville})")
+        print(f"[SITE] Recherche pour: {nom_court} (sigles={sigles}, ville={ville})")
 
         # Methode 1 : DDG avec nom exact + "site officiel"
         site = self._search_ddg(f'"{nom_court}" site officiel')
         if site:
-            _log(f"[SITE] TROUVE via DDG nom: {site}")
+            print(f"[SITE] TROUVE via DDG nom: {site}")
             return site
 
         time.sleep(1)
@@ -163,7 +154,7 @@ class CompanyEnricher:
             if sigle != nom_court:
                 site = self._search_ddg(f'{sigle} site officiel')
                 if site:
-                    _log(f"[SITE] TROUVE via DDG sigle '{sigle}': {site}")
+                    print(f"[SITE] TROUVE via DDG sigle '{sigle}': {site}")
                     return site
                 time.sleep(1)
 
@@ -171,7 +162,7 @@ class CompanyEnricher:
         if ville:
             site = self._search_ddg(f'{nom_court} {ville}')
             if site:
-                _log(f"[SITE] TROUVE via DDG nom+ville: {site}")
+                print(f"[SITE] TROUVE via DDG nom+ville: {site}")
                 return site
             time.sleep(1)
 
@@ -179,15 +170,15 @@ class CompanyEnricher:
         for sigle in sigles:
             site = self._guess_domain(sigle)
             if site:
-                _log(f"[SITE] TROUVE via guess sigle '{sigle}': {site}")
+                print(f"[SITE] TROUVE via guess sigle '{sigle}': {site}")
                 return site
 
         site = self._guess_domain(nom_court)
         if site:
-            _log(f"[SITE] TROUVE via guess nom: {site}")
+            print(f"[SITE] TROUVE via guess nom: {site}")
             return site
 
-        _log(f"[SITE] ECHEC: aucun site pour {nom_court}")
+        print(f"[SITE] ECHEC: aucun site pour {nom_court}")
         return ""
 
     def _extract_sigles(self, nom: str) -> list:
@@ -220,11 +211,11 @@ class CompanyEnricher:
         """Recherche DuckDuckGo HTML, retourne le premier resultat pertinent."""
         try:
             url = f"https://html.duckduckgo.com/html/?q={quote(query)}"
-            _log(f"  [DDG] query='{query}'")
+            print(f"  [DDG] query='{query}'")
 
             for attempt in range(2):
                 resp = self._web_session.get(url, timeout=8)
-                _log(f"  [DDG] status={resp.status_code} len={len(resp.text)} attempt={attempt}")
+                print(f"  [DDG] status={resp.status_code} len={len(resp.text)} attempt={attempt}")
                 if resp.status_code == 200:
                     break
                 if resp.status_code == 202 and attempt == 0:
@@ -236,7 +227,7 @@ class CompanyEnricher:
                 return ""
 
             matches = list(re.finditer(r'uddg=([^&"]+)', resp.text))
-            _log(f"  [DDG] {len(matches)} liens uddg trouves")
+            print(f"  [DDG] {len(matches)} liens uddg trouves")
 
             for match in matches:
                 href = unquote(match.group(1))
@@ -245,11 +236,11 @@ class CompanyEnricher:
                 if self._is_company_website(href):
                     return href
                 else:
-                    _log(f"  [DDG] skip (exclu): {href[:60]}")
+                    print(f"  [DDG] skip (exclu): {href[:60]}")
 
             return ""
         except Exception as e:
-            _log(f"  [DDG] EXCEPTION: {e}")
+            print(f"  [DDG] EXCEPTION: {e}")
             return ""
 
     def _guess_domain(self, nom: str) -> str:
@@ -285,13 +276,13 @@ class CompanyEnricher:
                     r = self._web_session.head(
                         domain, timeout=3, allow_redirects=True,
                     )
-                    _log(f"  [GUESS] {domain} → {r.status_code} → {r.url[:60]}")
+                    print(f"  [GUESS] {domain} → {r.status_code} → {r.url[:60]}")
                     if r.status_code < 400:
                         final_url = r.url
                         if self._is_company_website(final_url):
                             return final_url
                 except Exception as e:
-                    _log(f"  [GUESS] {domain} → ERREUR: {type(e).__name__}")
+                    print(f"  [GUESS] {domain} → ERREUR: {type(e).__name__}")
 
         return ""
 
