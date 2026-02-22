@@ -25,9 +25,9 @@ import config
 class WebsiteEnricher:
     """Enrichit les donnees entreprises en visitant leurs sites web"""
 
-    TIMEOUT = config.WEBSITE_CONFIG.get('timeout', 5)
-    MAX_CONTENT = config.WEBSITE_CONFIG.get('max_content_length', 500_000)
-    DELAY = config.WEBSITE_CONFIG.get('delay_between_requests', 1)
+    TIMEOUT = 5
+    MAX_CONTENT = 500_000
+    DELAY = 1
 
     SKIP_DOMAINS = [
         'facebook.com', 'twitter.com', 'linkedin.com', 'instagram.com',
