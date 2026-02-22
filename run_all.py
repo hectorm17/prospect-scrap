@@ -8,6 +8,7 @@ import sys
 from datetime import datetime
 from scraper import DataGouvScraper
 from enricher import SocieteEnricher
+from website_enricher import WebsiteEnricher
 from qualifier import AutoScorer, ProspectQualifier, format_excel_output
 import config
 
@@ -32,7 +33,7 @@ def run_pipeline(custom_filtres=None):
     # ================================================
     # ETAPE 1 : SCRAPING DATA.GOUV (CA + dirigeant + age)
     # ================================================
-    print("\n ETAPE 1/4 : Scraping data.gouv.fr (CA, dirigeants, finances)")
+    print("\n ETAPE 1/5 : Scraping data.gouv.fr (CA, dirigeants, finances)")
     print("-" * 60)
 
     try:
@@ -56,7 +57,7 @@ def run_pipeline(custom_filtres=None):
     # ================================================
     # ETAPE 2 : ENRICHISSEMENT SOCIETE.COM
     # ================================================
-    print("\n ETAPE 2/4 : Enrichissement Societe.com (tel, email, site web)")
+    print("\n ETAPE 2/5 : Enrichissement Societe.com (tel, email, site web)")
     print("-" * 60)
 
     try:
@@ -72,9 +73,21 @@ def run_pipeline(custom_filtres=None):
         print(f"\n Enrichissement partiel ({e})")
 
     # ================================================
-    # ETAPE 3 : SCORING
+    # ETAPE 3 : ENRICHISSEMENT SITES WEB
     # ================================================
-    print("\n ETAPE 3/4 : Scoring")
+    print("\n ETAPE 3/5 : Visite sites web entreprises")
+    print("-" * 60)
+
+    try:
+        ws_enricher = WebsiteEnricher()
+        df = ws_enricher.enrich_dataframe(df)
+    except Exception as e:
+        print(f"\n Enrichissement web partiel ({e})")
+
+    # ================================================
+    # ETAPE 4 : SCORING
+    # ================================================
+    print("\n ETAPE 4/5 : Scoring")
     print("-" * 60)
 
     has_api_key = config.ANTHROPIC_API_KEY and config.ANTHROPIC_API_KEY != "sk-ant-xxxxx"
@@ -94,9 +107,9 @@ def run_pipeline(custom_filtres=None):
         df = scorer.score_dataframe(df)
 
     # ================================================
-    # ETAPE 4 : EXPORT EXCEL
+    # ETAPE 5 : EXPORT EXCEL
     # ================================================
-    print("\n ETAPE 4/4 : Export Excel")
+    print("\n ETAPE 5/5 : Export Excel")
     print("-" * 60)
 
     file_final = f"outputs/prospects_{timestamp}.xlsx"

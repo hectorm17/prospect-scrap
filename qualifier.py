@@ -322,6 +322,7 @@ def format_excel_output(df: pd.DataFrame, output_file: str = None) -> bytes:
         ('score', 'Score'),
         ('score_label', 'Qualification'),
         ('nom_entreprise', 'Entreprise'),
+        ('logo_url', 'Logo (URL)'),
         ('ca_m', "Chiffre d'Affaires (M)"),
         ('evolution_ca', 'Evolution CA'),
         ('resultat_m', 'Resultat Net (M)'),
@@ -331,6 +332,9 @@ def format_excel_output(df: pd.DataFrame, output_file: str = None) -> bytes:
         ('telephone', 'Telephone'),
         ('email', 'Email'),
         ('site_web', 'Site Web'),
+        ('ws_description', 'Description Site Web'),
+        ('ws_services', 'Services'),
+        ('ws_capital', 'Capital Social'),
         ('adresse_complete', 'Adresse du Siege'),
         ('ville', 'Ville'),
         ('region', 'Region'),
@@ -415,11 +419,12 @@ def format_excel_output(df: pd.DataFrame, output_file: str = None) -> bytes:
                     ws.write(row_num + 1, col_num, str(val) if pd.notna(val) else '', cell_fmt)
 
         widths = {
-            'Score': 7, 'Qualification': 30, 'Entreprise': 35,
+            'Score': 7, 'Qualification': 30, 'Entreprise': 35, 'Logo (URL)': 40,
             "Chiffre d'Affaires (M)": 18, 'Evolution CA': 22,
             'Resultat Net (M)': 16, 'Activite': 50,
             'Dirigeant Principal': 25, 'Age Dirigeant': 12, 'Telephone': 14, 'Email': 25,
-            'Site Web': 25, 'Adresse du Siege': 35, 'Ville': 15,
+            'Site Web': 25, 'Description Site Web': 50, 'Services': 45,
+            'Capital Social': 15, 'Adresse du Siege': 35, 'Ville': 15,
             'Region': 18, 'Effectif': 18, 'Date de Creation': 14,
             'Forme Juridique': 14, 'SIREN': 12, 'Fiche Pappers': 40,
             'Fiche Data.gouv': 45, 'Resume Activite': 40, 'Analyse M&A': 40,
