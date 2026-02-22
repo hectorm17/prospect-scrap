@@ -13,7 +13,6 @@ from streamlit_shadcn_ui import metric_card
 
 from scraper import DataGouvScraper, TRANCHES_PME
 from enricher import SocieteEnricher
-from website_enricher import WebsiteEnricher
 from qualifier import AutoScorer, ProspectQualifier, format_excel_output
 import config
 
@@ -405,7 +404,6 @@ def search_tab():
     enable_ia = False
     api_key = ""
     skip_enrichment = False
-    enable_website = False
 
     if show_advanced:
         st.markdown("<br>", unsafe_allow_html=True)
@@ -446,14 +444,7 @@ def search_tab():
 
         st.markdown("<br>", unsafe_allow_html=True)
 
-        skip_enrichment = st.checkbox("Sauter l'enrichissement Societe.com", value=False, key="skip_enrichment")
-
-        st.markdown("<br>", unsafe_allow_html=True)
-
-        enable_website = st.checkbox(
-            "Enrichir via les sites web des entreprises", value=False, key="enable_website",
-            help="Visite chaque site web pour extraire description, contacts, services (~2s/site)",
-        )
+        skip_enrichment = st.checkbox("Sauter l'enrichissement", value=False, key="skip_enrichment")
 
     st.markdown("<br>", unsafe_allow_html=True)
 
@@ -477,14 +468,13 @@ def search_tab():
             forme_code=forme_code, age_min=age_min, limit=limit,
             age_dir_min=age_dir_min, age_dir_max=age_dir_max,
             api_key=api_key, skip_enrichment=skip_enrichment,
-            enable_ia=enable_ia, enable_website=enable_website,
-            filters_text=filters_text,
+            enable_ia=enable_ia, filters_text=filters_text,
         )
 
 
 def run_pipeline(ca_min, ca_max, region_code, secteur_code, forme_code,
                  age_min, limit, age_dir_min, age_dir_max,
-                 api_key, skip_enrichment, enable_ia, enable_website,
+                 api_key, skip_enrichment, enable_ia,
                  filters_text):
 
     os.makedirs("outputs", exist_ok=True)
@@ -526,9 +516,9 @@ def run_pipeline(ca_min, ca_max, region_code, secteur_code, forme_code,
         age_filled = df['age_dirigeant'].notna().sum()
         st.success(f"{len(df)} entreprises trouvees (CA: {ca_filled}/{len(df)}, Age dirigeant: {age_filled}/{len(df)})")
 
-        # 2 - Enrichissement (CA deja filtre par le scraper)
+        # 2 - Enrichissement API JSON (CA, dirigeant, site web)
         if not skip_enrichment:
-            status.markdown("**Enrichissement Societe.com...**")
+            status.markdown("**Enrichissement API + recherche sites web...**")
             progress.progress(30)
             enricher = SocieteEnricher()
             df = enricher.enrich_dataframe(df, filter_ca=False)
@@ -540,19 +530,6 @@ def run_pipeline(ca_min, ca_max, region_code, secteur_code, forme_code,
         # Securite : tronquer au nombre demande
         if len(df) > limit:
             df = df.head(limit).copy()
-
-        # 2.5 - Enrichissement sites web
-        if enable_website and not skip_enrichment:
-            status.markdown("**Visite des sites web...**")
-            progress.progress(56)
-            try:
-                ws_enricher = WebsiteEnricher()
-                df = ws_enricher.enrich_dataframe(df)
-                ws_count = df['ws_description'].notna().sum() if 'ws_description' in df.columns else 0
-                st.success(f"{ws_count}/{len(df)} sites web enrichis")
-            except Exception as e:
-                st.warning(f"Enrichissement web partiel: {e}")
-            progress.progress(58)
 
         # 3 - Scoring
         if enable_ia and api_key:
@@ -668,7 +645,6 @@ def show_results(df, excel_bytes, filename):
         'ville': 'Ville',
         'telephone': 'Tel',
         'site_web': 'Site Web',
-        'ws_description': 'Description',
         'justification': 'Justification',
     }
     available = {k: v for k, v in cols_map.items() if k in preview_df.columns}
