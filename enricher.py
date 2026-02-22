@@ -13,6 +13,15 @@ from datetime import datetime
 from tqdm import tqdm
 import config
 
+# Log visible dans Streamlit Cloud
+def _log(msg: str):
+    print(msg)
+    try:
+        import streamlit as st
+        st.text(msg)
+    except Exception:
+        pass
+
 
 class CompanyEnricher:
     """Enrichit les entreprises via API JSON officielle + recherche site web"""
@@ -137,13 +146,14 @@ class CompanyEnricher:
     def find_website(self, nom_entreprise: str, ville: str = "") -> str:
         """Cherche le site web avec plusieurs methodes en cascade."""
 
-        # Extraire le nom court (avant la parenthese) et les sigles
         nom_court = nom_entreprise.split('(')[0].strip()
         sigles = self._extract_sigles(nom_entreprise)
+        _log(f"[SITE] Recherche pour: {nom_court} (sigles={sigles}, ville={ville})")
 
         # Methode 1 : DDG avec nom exact + "site officiel"
         site = self._search_ddg(f'"{nom_court}" site officiel')
         if site:
+            _log(f"[SITE] TROUVE via DDG nom: {site}")
             return site
 
         time.sleep(1)
@@ -153,6 +163,7 @@ class CompanyEnricher:
             if sigle != nom_court:
                 site = self._search_ddg(f'{sigle} site officiel')
                 if site:
+                    _log(f"[SITE] TROUVE via DDG sigle '{sigle}': {site}")
                     return site
                 time.sleep(1)
 
@@ -160,37 +171,42 @@ class CompanyEnricher:
         if ville:
             site = self._search_ddg(f'{nom_court} {ville}')
             if site:
+                _log(f"[SITE] TROUVE via DDG nom+ville: {site}")
                 return site
             time.sleep(1)
 
         # Methode 4 : Deviner le domaine
-        # Essayer chaque sigle (VYV3 avant PDL)
         for sigle in sigles:
             site = self._guess_domain(sigle)
             if site:
+                _log(f"[SITE] TROUVE via guess sigle '{sigle}': {site}")
                 return site
 
-        # Puis le nom complet
         site = self._guess_domain(nom_court)
         if site:
+            _log(f"[SITE] TROUVE via guess nom: {site}")
             return site
 
+        _log(f"[SITE] ECHEC: aucun site pour {nom_court}")
         return ""
 
     def _extract_sigles(self, nom: str) -> list:
         """Extrait les sigles depuis 'NOM COMPLET (SIGLE)' ou 'NOM (A-B)'.
         Retourne une liste ordonnee par priorite."""
+        NOISE = {'de', 'des', 'du', 'la', 'le', 'les', 'en', 'et', 'au',
+                 'aux', 'sur', 'par', 'pour', 'banque', 'societe', 'groupe',
+                 'nationale', 'pays', 'france'}
         match = re.search(r'\(([^)]+)\)', nom)
         if not match:
             return []
         inner = match.group(1).strip()
         sigles = []
-        # D'abord essayer le contenu complet (ex: "SNSM", "SNEMM")
-        parts = re.split(r'[\s\-]+', inner)
-        # Chaque partie est un candidat
+        # Separer par tirets (pas espaces) — "VYV3-PDL" → ["VYV3", "PDL"]
+        parts = re.split(r'\s*-\s*', inner)
         for p in parts:
             p = p.strip()
-            if 2 <= len(p) <= 12 and not p.lower().startswith('banque'):
+            # Garder les sigles courts (2-12 chars), ignorer les mots courants
+            if 2 <= len(p) <= 12 and p.lower() not in NOISE:
                 if p not in sigles:
                     sigles.append(p)
         return sigles
@@ -204,9 +220,11 @@ class CompanyEnricher:
         """Recherche DuckDuckGo HTML, retourne le premier resultat pertinent."""
         try:
             url = f"https://html.duckduckgo.com/html/?q={quote(query)}"
+            _log(f"  [DDG] query='{query}'")
 
             for attempt in range(2):
                 resp = self._web_session.get(url, timeout=8)
+                _log(f"  [DDG] status={resp.status_code} len={len(resp.text)} attempt={attempt}")
                 if resp.status_code == 200:
                     break
                 if resp.status_code == 202 and attempt == 0:
@@ -217,35 +235,35 @@ class CompanyEnricher:
             if resp.status_code != 200:
                 return ""
 
-            # Parser les liens de resultats DDG
-            # Format: <a class="result__a" href="//duckduckgo.com/l/?uddg=ENCODED_URL&...">
-            for match in re.finditer(r'uddg=([^&"]+)', resp.text):
+            matches = list(re.finditer(r'uddg=([^&"]+)', resp.text))
+            _log(f"  [DDG] {len(matches)} liens uddg trouves")
+
+            for match in matches:
                 href = unquote(match.group(1))
                 if not href.startswith('http'):
                     continue
                 if self._is_company_website(href):
                     return href
+                else:
+                    _log(f"  [DDG] skip (exclu): {href[:60]}")
 
             return ""
-        except Exception:
+        except Exception as e:
+            _log(f"  [DDG] EXCEPTION: {e}")
             return ""
 
     def _guess_domain(self, nom: str) -> str:
         """Essaie de deviner le domaine depuis le nom de l'entreprise."""
-        # Nettoyer : retirer les formes juridiques
         clean = nom.upper()
         for suffix in ['SAS', 'SARL', 'SA', 'EURL', 'SCI', 'SASU', 'SNC', 'SOC', 'SOCIETE', 'NATIONALE']:
             clean = re.sub(rf'\b{suffix}\b', '', clean)
-        # Retirer accents
         import unicodedata
         clean = unicodedata.normalize('NFD', clean)
         clean = clean.encode('ascii', 'ignore').decode('ascii')
-        # Garder seulement lettres et chiffres
         words = re.findall(r'[a-zA-Z0-9]+', clean.lower())
         if not words:
             return ""
 
-        # Variantes a tester (ordre de priorite)
         candidates = []
         joined = ''.join(words)
         hyphenated = '-'.join(words)
@@ -253,7 +271,6 @@ class CompanyEnricher:
         if hyphenated != joined:
             candidates.append(hyphenated)
 
-        # Deduplicate en preservant l'ordre
         seen = set()
         unique = []
         for c in candidates:
@@ -268,12 +285,13 @@ class CompanyEnricher:
                     r = self._web_session.head(
                         domain, timeout=3, allow_redirects=True,
                     )
+                    _log(f"  [GUESS] {domain} → {r.status_code} → {r.url[:60]}")
                     if r.status_code < 400:
                         final_url = r.url
                         if self._is_company_website(final_url):
                             return final_url
-                except Exception:
-                    pass
+                except Exception as e:
+                    _log(f"  [GUESS] {domain} → ERREUR: {type(e).__name__}")
 
         return ""
 
