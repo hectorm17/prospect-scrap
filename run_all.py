@@ -110,7 +110,8 @@ def run_pipeline(custom_filtres=None):
     print("-" * 60)
 
     lettres_dir = f"outputs/lettres_{timestamp}"
-    gen = LetterGenerator(output_dir=lettres_dir)
+    letter_api_key = config.ANTHROPIC_API_KEY if config.ANTHROPIC_API_KEY and config.ANTHROPIC_API_KEY != "sk-ant-xxxxx" else ""
+    gen = LetterGenerator(output_dir=lettres_dir, api_key=letter_api_key)
     letter_files = gen.generate_all(df)
 
     print(f"  {len(letter_files)} lettres generees dans {lettres_dir}/")

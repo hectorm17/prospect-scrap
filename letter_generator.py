@@ -87,23 +87,34 @@ def _extract_domain(site_web):
 def _clean_company_name(name):
     """
     Nettoie le nom d'entreprise :
-    - 'HERVE (HERVE)' -> 'Hervé'
-    - 'SOCIETE D AMENAGEMENT... (SAFERNA)' -> 'Saferna'
-    - Noms courts -> format Titre
+    - 'HERVE (HERVE)' -> 'Herve'
+    - 'CCF (CCF - BANQUE DES CARAIBES)' -> 'CCF'
+    - 'SOCIETE GENERALE (SG)' -> 'Société Générale'
+    - 'ELIOR RESTAURATION FRANCE (ELIOR...)' -> 'Elior Restauration France'
     """
     if not name:
         return name
 
-    # Doublon exact : "HERVE (HERVE)" -> "HERVE"
+    # Doublon exact : "HERVE (HERVE)" -> "Herve"
     m = re.match(r'^(.+?)\s*\(\1\)\s*$', name, re.IGNORECASE)
     if m:
         return m.group(1).strip().title()
 
-    # Contient un sigle entre parentheses et nom trop long -> utiliser le sigle
-    if len(name) > 30:
-        sigle = re.search(r'\(([A-Z\-]{2,15})\)', name)
-        if sigle:
-            return sigle.group(1).title()
+    # Nom court suivi d'une parenthese qui commence pareil : "CCF (CCF - BANQUE...)" -> "CCF"
+    m = re.match(r'^([A-Z\s\-]{2,10}?)\s*\(\1\b.*\)\s*$', name, re.IGNORECASE)
+    if m:
+        return m.group(1).strip()
+
+    # Sigle court entre parentheses : "SOCIETE GENERALE (SG)" -> partie avant les parens
+    m = re.match(r'^(.+?)\s*\([A-Z\-]{1,5}\)\s*$', name)
+    if m:
+        return m.group(1).strip().title()
+
+    # Nom trop long avec parentheses -> partie avant les parens en Titre
+    if len(name) > 30 and '(' in name:
+        before_paren = name.split('(')[0].strip()
+        if before_paren:
+            return before_paren.title()
 
     return name
 
@@ -163,6 +174,7 @@ def _download_logo(domain):
     """
     Telecharge le logo d'une entreprise. Essaie plusieurs sources.
     Retourne les bytes de l'image ou None.
+    Seuil : > 1000 bytes pour eviter les favicons flous.
     """
     if not domain:
         return None
@@ -176,12 +188,67 @@ def _download_logo(domain):
     for url in sources:
         try:
             r = requests.get(url, timeout=5)
-            if r.status_code == 200 and len(r.content) > 500:
+            if r.status_code == 200 and len(r.content) > 1000:
                 return r.content
         except Exception:
             continue
 
     return None
+
+
+def _generate_intro_with_ai(entreprise, dirigeant, annee_creation, activite_naf, region, api_key):
+    """
+    Utilise Claude API pour generer un paragraphe d'intro naturel et personnalise.
+    Retourne le texte ou None si pas de cle API ou erreur.
+    """
+    if not api_key:
+        return None
+
+    import anthropic
+    client = anthropic.Anthropic(api_key=api_key)
+
+    prompt = f"""Tu dois rédiger UN SEUL paragraphe pour une lettre de prospection bancaire (Banque Mirabaud).
+
+Contexte :
+- Entreprise : {entreprise}
+- Dirigeant : {dirigeant or 'inconnu'}
+- Année de création : {annee_creation or 'inconnue'}
+- Code/libellé NAF : {activite_naf or 'inconnu'}
+- Région : {region or 'France'}
+
+Format EXACT à respecter (ne change PAS la structure, remplis juste les crochets) :
+"Sous votre impulsion et depuis [année], [Nom entreprise propre] s'est affirmée comme une entreprise référente dans le secteur [reformule le secteur NAF de manière naturelle et professionnelle], et ce, dans un environnement en perpétuelle évolution ([3 défis/tendances actuels du secteur sous forme de mots-clefs séparés par des virgules])."
+
+Règles :
+- Le secteur doit être reformulé naturellement (PAS le libellé NAF brut)
+  Exemple : "autres intermédiations monétaires" → "des services bancaires et financiers"
+  Exemple : "travaux d'installation d'équipements thermiques" → "de l'installation et la maintenance d'équipements énergétiques"
+- Les 3 défis doivent être pertinents pour CE secteur spécifique
+  Exemple banque : "digitalisation des services, évolution réglementaire, enjeux ESG"
+  Exemple construction : "transition bas carbone, industrialisation des chantiers, normes environnementales"
+- Si le dirigeant est inconnu, commence par "Depuis [année]," sans "Sous votre impulsion"
+- Si l'année est inconnue, commence directement par "[Nom entreprise] s'est affirmée..."
+- Le nom de l'entreprise doit être PROPRE (pas de doublon, version courte/connue)
+- UNE SEULE phrase, pas de retour à la ligne
+- Ton professionnel, sobre, style banque d'affaires
+- Maximum 250 caractères
+
+Réponds UNIQUEMENT avec le paragraphe, sans guillemets, sans explication."""
+
+    try:
+        response = client.messages.create(
+            model="claude-sonnet-4-20250514",
+            max_tokens=300,
+            messages=[{"role": "user", "content": prompt}]
+        )
+        text = response.content[0].text.strip()
+        # Retirer les guillemets si Claude en a mis
+        if text.startswith('"') and text.endswith('"'):
+            text = text[1:-1]
+        return text
+    except Exception as e:
+        print(f"  Claude API error: {e}")
+        return None
 
 
 # ---------------------------------------------------------------------------
@@ -191,9 +258,10 @@ def _download_logo(domain):
 class LetterGenerator:
     """Genere des lettres Word a partir du template Mirabaud."""
 
-    def __init__(self, output_dir: str = "lettres", template_path: str = None):
+    def __init__(self, output_dir: str = "lettres", template_path: str = None, api_key: str = None):
         self.output_dir = output_dir
         self.template_path = template_path or TEMPLATE_PATH
+        self.api_key = api_key or os.environ.get('ANTHROPIC_API_KEY', '')
 
     def generate_letter(self, prospect: dict) -> BytesIO:
         """
@@ -213,6 +281,12 @@ class LetterGenerator:
         secteur = _get_secteur_text(prospect)
         date_creation = _clean(prospect.get('date_creation'))
         site_web = _clean(prospect.get('site_web'))
+        region = _clean(prospect.get('region'))
+
+        # Activite NAF pour le prompt IA
+        activite_naf = _clean(prospect.get('libelle_naf'))
+        if not activite_naf:
+            activite_naf = _clean(prospect.get('code_naf'))
 
         # Anciennete
         annee_creation = ''
@@ -222,18 +296,31 @@ class LetterGenerator:
             except ValueError:
                 pass
 
-        # --- FIX 1 : Logo ---
+        # --- Logo (P0) ---
         self._replace_logo(doc, site_web)
 
-        # --- FIX 4 : Date (P2) ---
+        # --- Date (P2) ---
         self._clear_and_set(doc.paragraphs[2], f"Paris, le {_format_date_fr()}")
 
-        # --- FIX 2 : Civilite (P9) ---
+        # --- Civilite (P9) ---
         salutation = _format_civilite(dirigeant)
         self._clear_and_set(doc.paragraphs[9], salutation)
 
-        # --- FIX 3 : Intro (P11) ---
-        intro = self._build_intro(entreprise, annee_creation, secteur, dirigeant)
+        # --- Intro (P11) : IA si disponible, sinon fallback ---
+        intro_ai = _generate_intro_with_ai(
+            entreprise=entreprise,
+            dirigeant=dirigeant,
+            annee_creation=annee_creation,
+            activite_naf=activite_naf,
+            region=region,
+            api_key=self.api_key,
+        )
+
+        if intro_ai:
+            intro = intro_ai
+        else:
+            intro = self._build_intro(entreprise, annee_creation, secteur, dirigeant)
+
         self._clear_and_set(doc.paragraphs[11], intro)
 
         # Sauvegarder en memoire
@@ -277,7 +364,7 @@ class LetterGenerator:
                 pass
 
     def _build_intro(self, entreprise, annee_creation, secteur, dirigeant):
-        """Construit le paragraphe d'introduction personnalise (P11)."""
+        """Construit le paragraphe d'introduction personnalise (P11). Fallback sans IA."""
         parts = []
 
         if dirigeant and annee_creation:

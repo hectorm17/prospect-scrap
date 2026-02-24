@@ -19,6 +19,10 @@ from qualifier import AutoScorer, ProspectQualifier, format_excel_output
 from letter_generator import LetterGenerator
 import config
 
+# Cle API Anthropic depuis Streamlit Secrets → variable d'environnement
+if hasattr(st, 'secrets') and 'ANTHROPIC_API_KEY' in st.secrets:
+    os.environ['ANTHROPIC_API_KEY'] = st.secrets['ANTHROPIC_API_KEY']
+
 st.set_page_config(
     page_title="MiraScrap",
     page_icon="",
@@ -559,8 +563,12 @@ def run_pipeline(ca_min, ca_max, region_code, secteur_code, forme_code,
         progress.progress(95)
 
         # 5 - Generation lettres + ZIP
-        status.markdown("**Generation des lettres de prospection...**")
-        gen = LetterGenerator()
+        letter_api_key = api_key or os.environ.get('ANTHROPIC_API_KEY', '')
+        if letter_api_key:
+            status.markdown("**Generation des lettres personnalisees (IA)...**")
+        else:
+            status.markdown("**Generation des lettres de prospection...**")
+        gen = LetterGenerator(api_key=letter_api_key)
         zip_buffer = BytesIO()
         with zipfile.ZipFile(zip_buffer, 'w', zipfile.ZIP_DEFLATED) as zf:
             zf.writestr(f"prospects.xlsx", excel_bytes)
