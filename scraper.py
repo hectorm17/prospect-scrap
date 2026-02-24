@@ -116,9 +116,9 @@ class DataGouvScraper:
         region_code = filtres.get('region')
         target_depts = REGION_DEPARTEMENTS.get(region_code, []) if region_code else []
 
-        # Filtre CA — passé directement à l'API (server-side, 100% fill rate)
-        ca_min = filtres.get('ca_min', 0) or 0
-        ca_max = filtres.get('ca_max', 0) or 0
+        # Filtre CA — passé directement à l'API (100% fill rate)
+        ca_min = float(filtres.get('ca_min', 0) or 0)
+        ca_max = float(filtres.get('ca_max', 0) or 0)
 
         print(f"\n[Scraper] Recherche data.gouv.fr...")
         print(f"  Limite cible: {limit}")
