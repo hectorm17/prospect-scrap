@@ -313,6 +313,8 @@ class DataGouvScraper:
 
                     # Dirigeant + âge (directement depuis l'API)
                     'dirigeant_principal': self._extract_dirigeant(company),
+                    'dirigeant_nom': self._extract_dirigeant_nom(company),
+                    'dirigeant_prenom': self._extract_dirigeant_prenom(company),
                     'age_dirigeant': self._extract_age_dirigeant(company),
 
                     # Liens
@@ -341,32 +343,71 @@ class DataGouvScraper:
             parts.append(' '.join(cp_ville))
         return ', '.join(parts) if parts else ''
 
-    def _find_dirigeant_pp(self, dirigeants: list) -> tuple:
+    # Qualités à EXCLURE (jamais sélectionner comme dirigeant principal)
+    _QUALITE_EXCLUSIONS = [
+        'commissaire aux comptes',
+        'commissaire aux comptes suppléant',
+        'commissaire aux comptes titulaire',
+        'membre du conseil de surveillance',
+        'censeur',
+        'représentant permanent',
+    ]
+
+    # Qualités PRIORITAIRES (chercher dans cet ordre)
+    _QUALITE_PRIORITE = [
+        'président',
+        "président du conseil d'administration",
+        'président-directeur général',
+        'pdg',
+        'directeur général',
+        'gérant',
+        'président de sas',
+        'co-gérant',
+        'directeur général délégué',
+        'administrateur',
+    ]
+
+    def _pick_best_dirigeant(self, dirigeants: list) -> tuple:
         """
-        Parcourt la liste des dirigeants pour trouver une personne physique.
-        Retourne (pp_dict, pm_display_name, pm_siren).
+        Sélectionne le meilleur dirigeant PP par priorité de qualité.
+        Retourne (pp_dict_or_None, pm_display_name, pm_siren).
         """
-        personne_physique = None
         personne_morale = None
         pm_siren = None
 
+        # Séparer PP et PM
+        pp_list = []
         for d in dirigeants:
             type_dir = (d.get('type_dirigeant') or '').lower()
             prenoms = d.get('prenoms') or ''
 
             if type_dir == 'personne morale' or not prenoms:
-                # C'est une personne morale
                 if not personne_morale:
                     denomination = d.get('denomination') or d.get('nom') or ''
                     qualite = d.get('qualite') or ''
                     personne_morale = f"{denomination} ({qualite})" if qualite else denomination
                     pm_siren = d.get('siren') or ''
             else:
-                # C'est une personne physique
-                if not personne_physique:
-                    personne_physique = d
+                pp_list.append(d)
 
-        return personne_physique, personne_morale, pm_siren
+        if not pp_list:
+            return None, personne_morale, pm_siren
+
+        # 1. Chercher par priorité de qualité
+        for keyword in self._QUALITE_PRIORITE:
+            for d in pp_list:
+                qualite = (d.get('qualite') or '').lower()
+                if keyword in qualite:
+                    return d, personne_morale, pm_siren
+
+        # 2. Prendre le premier PP qui n'est PAS exclu
+        for d in pp_list:
+            qualite = (d.get('qualite') or '').lower()
+            if not any(excl in qualite for excl in self._QUALITE_EXCLUSIONS):
+                return d, personne_morale, pm_siren
+
+        # 3. Tous les PP sont exclus → retourner None pour tenter le deep lookup PM
+        return None, personne_morale, pm_siren
 
     def _deep_lookup_pm(self, siren_pm: str) -> Optional[Dict]:
         """Cherche le dirigeant PP derriere une personne morale via son SIREN."""
@@ -382,40 +423,50 @@ class DataGouvScraper:
                 results = r.json().get('results', [])
                 if results:
                     pm_dirs = results[0].get('dirigeants', [])
-                    for d in pm_dirs:
-                        if (d.get('type_dirigeant', '').lower() == 'personne physique'
-                                and d.get('prenoms')):
-                            return d
+                    # Use same priority logic for deep lookup
+                    pp, _, _ = self._pick_best_dirigeant(pm_dirs)
+                    return pp
         except Exception:
             pass
         return None
 
+    def _get_best_pp(self, company: Dict) -> tuple:
+        """
+        Retourne (pp_dict, pm_name, found_via_pm) pour une entreprise.
+        Cherche d'abord dans la liste directe, puis deep lookup PM,
+        puis fallback sur un PP exclu en dernier recours.
+        """
+        dirigeants = company.get('dirigeants', [])
+        if not dirigeants:
+            return None, None, False
+
+        pp, pm_name, pm_siren = self._pick_best_dirigeant(dirigeants)
+
+        found_via_pm = False
+        if not pp and pm_siren:
+            pp = self._deep_lookup_pm(pm_siren)
+            if pp:
+                found_via_pm = True
+
+        # Dernier recours : prendre n'importe quel PP (meme un commissaire)
+        if not pp:
+            for d in dirigeants:
+                if d.get('prenoms'):
+                    pp = d
+                    break
+
+        return pp, pm_name, found_via_pm
+
     def _extract_dirigeant(self, company: Dict) -> str:
-        """
-        Extrait le dirigeant principal (personne physique).
-        Si le premier dirigeant est une PM, cherche la PP dans la liste
-        puis en deep lookup via le SIREN de la PM.
-        """
+        """Extrait le dirigeant principal formaté pour l'Excel."""
         try:
-            dirigeants = company.get('dirigeants', [])
-            if not dirigeants:
-                return ""
-
-            pp, pm_name, pm_siren = self._find_dirigeant_pp(dirigeants)
-
-            # Deep lookup si on n'a qu'une PM
-            found_via_pm = False
-            if not pp and pm_siren:
-                pp = self._deep_lookup_pm(pm_siren)
-                if pp:
-                    found_via_pm = True
+            pp, pm_name, found_via_pm = self._get_best_pp(company)
 
             if pp:
                 prenoms = pp.get('prenoms', '')
                 nom = pp.get('nom', '')
                 qualite = pp.get('qualite', '')
                 result = f"{prenoms} {nom} ({qualite})".strip()
-                # Ajouter la PM si la PP a ete trouvee via deep lookup
                 if found_via_pm and pm_name:
                     pm_short = pm_name.split('(')[0].strip()
                     result += f" [via {pm_short}]"
@@ -425,6 +476,28 @@ class DataGouvScraper:
             return ""
         except Exception:
             return ""
+
+    def _extract_dirigeant_nom(self, company: Dict) -> str:
+        """Extrait le NOM de famille du dirigeant PP (champ séparé, sans nom de naissance)."""
+        try:
+            pp, _, _ = self._get_best_pp(company)
+            if not pp:
+                return ''
+            nom = pp.get('nom', '')
+            # Retirer le nom de naissance entre parentheses : "GERBER (FOREST)" → "GERBER"
+            import re
+            nom = re.sub(r'\s*\([^)]*\)', '', nom).strip()
+            return nom
+        except Exception:
+            return ''
+
+    def _extract_dirigeant_prenom(self, company: Dict) -> str:
+        """Extrait les PRENOMS du dirigeant PP (champ séparé)."""
+        try:
+            pp, _, _ = self._get_best_pp(company)
+            return pp.get('prenoms', '') if pp else ''
+        except Exception:
+            return ''
 
     def _extract_finances(self, company: Dict) -> tuple:
         """Extrait CA et résultat net depuis finances de l'API (année la plus récente)"""
@@ -443,14 +516,7 @@ class DataGouvScraper:
     def _extract_age_dirigeant(self, company: Dict) -> Optional[int]:
         """Extrait l'âge du dirigeant PP depuis date_de_naissance (format: '1972-12')"""
         try:
-            dirigeants = company.get('dirigeants', [])
-            if not dirigeants:
-                return None
-
-            # Trouver la personne physique (pas la PM)
-            pp, _, pm_siren = self._find_dirigeant_pp(dirigeants)
-            if not pp and pm_siren:
-                pp = self._deep_lookup_pm(pm_siren)
+            pp, _, _ = self._get_best_pp(company)
             if not pp:
                 return None
 

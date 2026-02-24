@@ -119,12 +119,12 @@ class CompanyEnricher:
         if nom:
             result['site_web'] = self.find_website(nom, ville)
 
-        # --- Logo Clearbit ---
+        # --- Logo (CompanyEnrich > Clearbit > Google Favicon) ---
         if result['site_web']:
             try:
                 domain = urlparse(result['site_web']).netloc.replace('www.', '')
                 if domain:
-                    result['logo_url'] = f"https://www.google.com/s2/favicons?domain={domain}&sz=128"
+                    result['logo_url'] = f"https://img.companyenrich.com/logo?domain={domain}&format=png"
             except Exception:
                 pass
 

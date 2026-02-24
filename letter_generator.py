@@ -45,6 +45,11 @@ PRENOMS_FEMININS = {
     'mireille', 'odette', 'suzanne', 'antoinette', 'bernadette',
     'denise', 'germaine', 'henriette', 'lucienne', 'marcelle',
     'pierrette', 'renée', 'renee', 'solange', 'yvette',
+    'melissa', 'mélissa', 'nadia', 'sonia', 'diana', 'lina',
+    'elena', 'élena', 'marina', 'nina', 'rosa', 'lola',
+    'clara', 'sara', 'anna', 'hannah', 'jessica', 'jennifer',
+    'christina', 'nathalia', 'tatiana', 'victoria', 'patricia',
+    'helena', 'hélèna', 'fatima', 'karima', 'samira', 'yasmina',
 }
 
 
@@ -119,21 +124,27 @@ def _clean_company_name(name):
     return name
 
 
-def _format_civilite(dirigeant_full):
+def _format_civilite(dirigeant_full, nom='', prenom=''):
     """
-    Retourne la salutation formatee : "Madame Goiri," ou "Monsieur Borel,"
-    - Retire la fonction entre parentheses
-    - Met le nom en format Titre
-    - Detecte le genre via le prenom
+    Retourne la salutation formatee : "Madame Borel," ou "Monsieur Cromb,"
+    Si nom et prenom sont fournis (champs separes de l'API), les utiliser directement.
+    Sinon parser le string complet.
     """
-    if not dirigeant_full:
+    if not nom and not dirigeant_full:
         return 'Madame, Monsieur,'
 
     # Personne morale uniquement → salutation generique
-    if dirigeant_full.startswith('PM:'):
+    if dirigeant_full and dirigeant_full.startswith('PM:'):
         return 'Madame, Monsieur,'
 
-    # Retirer TOUT ce qui est entre parentheses ou crochets
+    # Mode 1 : nom et prenom separes (depuis l'API)
+    if nom:
+        nom_formate = nom.strip().title()
+        premier_prenom = (prenom.split()[0].split('-')[0] if prenom else '').lower()
+        civilite = 'Madame' if premier_prenom in PRENOMS_FEMININS else 'Monsieur'
+        return f'{civilite} {nom_formate},'
+
+    # Mode 2 : parser le string complet "XAVIER DENIS ALAIN BOREL (Président)"
     nom_clean = re.sub(r'\([^)]*\)', '', dirigeant_full)
     nom_clean = re.sub(r'\[[^\]]*\]', '', nom_clean).strip()
     if not nom_clean:
@@ -146,17 +157,14 @@ def _format_civilite(dirigeant_full):
     if len(parts) < 2:
         return f'Monsieur {parts[0].title()},'
 
-    prenom = parts[0]
-    nom_famille = ' '.join(parts[1:])
+    # Le nom de famille est le DERNIER mot, le premier prenom est le PREMIER mot
+    premier_prenom = parts[0]
+    nom_famille = parts[-1]
 
-    # Detecter le genre (gerer les prenoms composes : Marie-Laure → Marie)
-    prenom_test = prenom.split('-')[0].lower()
+    prenom_test = premier_prenom.split('-')[0].lower()
     civilite = 'Madame' if prenom_test in PRENOMS_FEMININS else 'Monsieur'
 
-    # Nom en format Titre
-    nom_formate = nom_famille.title()
-
-    return f'{civilite} {nom_formate},'
+    return f'{civilite} {nom_famille.title()},'
 
 
 def _get_secteur_text(prospect):
@@ -309,8 +317,10 @@ class LetterGenerator:
         # --- Date (P2) ---
         self._clear_and_set(doc.paragraphs[2], f"Paris, le {_format_date_fr()}")
 
-        # --- Civilite (P9) ---
-        salutation = _format_civilite(dirigeant)
+        # --- Civilite (P9) : utiliser nom/prenom separes si disponibles ---
+        dirigeant_nom = _clean(prospect.get('dirigeant_nom'))
+        dirigeant_prenom = _clean(prospect.get('dirigeant_prenom'))
+        salutation = _format_civilite(dirigeant, nom=dirigeant_nom, prenom=dirigeant_prenom)
         self._clear_and_set(doc.paragraphs[9], salutation)
 
         # --- Intro (P11) : IA si disponible, sinon fallback ---
