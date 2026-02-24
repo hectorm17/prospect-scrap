@@ -1,17 +1,15 @@
 """
-Generation de lettres Word (.docx) personnalisees pour chaque prospect.
-Utilise python-docx pour creer des documents professionnels en memoire (BytesIO).
+Generation de lettres Word (.docx) personnalisees a partir du template Mirabaud.
+Copie le template et remplace les champs personnalisables (date, dirigeant, entreprise, secteur).
+Tout le reste (header, footer, logo Mirabaud, mise en page) est preserve.
 """
 
 import os
 import re
-import requests
 from io import BytesIO
 from datetime import datetime
 
 from docx import Document
-from docx.shared import Pt, Cm, Inches, RGBColor
-from docx.enum.text import WD_ALIGN_PARAGRAPH
 
 
 MOIS_FR = {
@@ -20,6 +18,9 @@ MOIS_FR = {
     'July': 'juillet', 'August': 'août', 'September': 'septembre',
     'October': 'octobre', 'November': 'novembre', 'December': 'décembre'
 }
+
+# Template path (relative to project root)
+TEMPLATE_PATH = os.path.join(os.path.dirname(__file__), 'templates', 'lettre_template.docx')
 
 
 def _clean(val, default=''):
@@ -31,202 +32,132 @@ def _clean(val, default=''):
     return str(val) if val else default
 
 
-class LetterGenerator:
-    """Genere des lettres Word personnalisees pour chaque prospect."""
+def _replace_in_paragraph(paragraph, old_text, new_text):
+    """
+    Remplace old_text par new_text dans un paragraphe, meme si le texte
+    est reparti sur plusieurs runs. Preserve le formatage du premier run.
+    Retourne True si un remplacement a eu lieu.
+    """
+    full_text = paragraph.text
+    if old_text not in full_text:
+        return False
 
-    def __init__(self, output_dir: str = "lettres"):
+    # Cas simple : le texte est dans un seul run
+    for run in paragraph.runs:
+        if old_text in run.text:
+            run.text = run.text.replace(old_text, new_text)
+            return True
+
+    # Cas complexe : le texte est reparti sur plusieurs runs
+    # On fusionne tout dans le premier run et on vide les autres
+    combined = full_text.replace(old_text, new_text)
+    paragraph.runs[0].text = combined
+    for run in paragraph.runs[1:]:
+        run.text = ''
+    return True
+
+
+def _set_paragraph_text(paragraph, new_text):
+    """
+    Remplace tout le texte d'un paragraphe en preservant le formatage du premier run.
+    """
+    if paragraph.runs:
+        paragraph.runs[0].text = new_text
+        for run in paragraph.runs[1:]:
+            run.text = ''
+    else:
+        paragraph.add_run(new_text)
+
+
+def _format_date_fr():
+    """Retourne la date du jour en francais : '24 février 2026'"""
+    date_str = datetime.now().strftime("%d %B %Y")
+    for en, fr in MOIS_FR.items():
+        date_str = date_str.replace(en, fr)
+    # Supprimer le zero initial (01 -> 1)
+    if date_str.startswith('0'):
+        date_str = date_str[1:]
+    return date_str
+
+
+class LetterGenerator:
+    """Genere des lettres Word a partir du template Mirabaud."""
+
+    def __init__(self, output_dir: str = "lettres", template_path: str = None):
         self.output_dir = output_dir
+        self.template_path = template_path or TEMPLATE_PATH
 
     def generate_letter(self, prospect: dict) -> BytesIO:
-        """Genere une lettre .docx pour un prospect. Retourne un BytesIO."""
-        doc = Document()
+        """
+        Copie le template Mirabaud et personnalise :
+        - Date (P2)
+        - Salutation (P9) : "Monsieur Le Calvé," -> dirigeant du prospect
+        - Paragraphe intro (P11) : entreprise, anciennete, secteur
+        Retourne un BytesIO contenant le .docx.
+        """
+        doc = Document(self.template_path)
 
-        # Marges
-        for section in doc.sections:
-            section.top_margin = Cm(2)
-            section.bottom_margin = Cm(2)
-            section.left_margin = Cm(2.5)
-            section.right_margin = Cm(2.5)
-
-        # Police par defaut
-        style = doc.styles['Normal']
-        font = style.font
-        font.name = 'Calibri'
-        font.size = Pt(11)
-        font.color.rgb = RGBColor(0x33, 0x33, 0x33)
-        pf = style.paragraph_format
-        pf.space_after = Pt(0)
-        pf.line_spacing = 1.15
-
-        entreprise = _clean(prospect.get('nom_entreprise'))
+        entreprise = _clean(prospect.get('nom_entreprise'), 'votre entreprise')
         dirigeant = _clean(prospect.get('dirigeant_enrichi')) or _clean(prospect.get('dirigeant_principal'))
-        adresse = _clean(prospect.get('adresse_complete'))
-        if not adresse:
-            parts = [
-                _clean(prospect.get('adresse')),
-                f"{_clean(prospect.get('code_postal'))} {_clean(prospect.get('ville'))}".strip(),
-            ]
-            adresse = ', '.join(p for p in parts if p)
-        region = _clean(prospect.get('region'))
-
-        # --- Logo prospect (en haut a droite) ---
-        logo_url = prospect.get('logo_url', '')
-        if logo_url and str(logo_url).startswith('http'):
-            try:
-                r = requests.get(str(logo_url), timeout=5)
-                if r.status_code == 200 and len(r.content) > 100:
-                    logo_stream = BytesIO(r.content)
-                    paragraph = doc.add_paragraph()
-                    paragraph.alignment = WD_ALIGN_PARAGRAPH.RIGHT
-                    run = paragraph.add_run()
-                    run.add_picture(logo_stream, width=Inches(1.2))
-            except Exception:
-                pass
-
-        # --- Date ---
-        date_str = datetime.now().strftime("%d %B %Y")
-        for en, fr in MOIS_FR.items():
-            date_str = date_str.replace(en, fr)
-
-        p = doc.add_paragraph()
-        p.alignment = WD_ALIGN_PARAGRAPH.RIGHT
-        run = p.add_run(f"Paris, le {date_str}")
-        run.font.size = Pt(11)
-        run.font.color.rgb = RGBColor(80, 80, 80)
-
-        doc.add_paragraph()  # espace
-
-        # --- Destinataire ---
-        if dirigeant:
-            p = doc.add_paragraph()
-            run = p.add_run(dirigeant)
-            run.bold = True
-            run.font.size = Pt(11)
-
-        p = doc.add_paragraph()
-        run = p.add_run(entreprise)
-        run.bold = True
-        run.font.size = Pt(11)
-
-        if adresse:
-            p = doc.add_paragraph()
-            run = p.add_run(adresse)
-            run.font.size = Pt(11)
-            run.font.color.rgb = RGBColor(80, 80, 80)
-
-        doc.add_paragraph()  # espace
-
-        # --- Objet ---
-        p = doc.add_paragraph()
-        run = p.add_run(f"Objet : Accompagnement strat\u00e9gique \u2013 {entreprise}")
-        run.bold = True
-        run.font.size = Pt(11)
-
-        doc.add_paragraph()  # espace
-
-        # --- Corps de la lettre ---
-        # Calculer l'anciennete
+        secteur = _clean(prospect.get('libelle_naf'))
         date_creation = _clean(prospect.get('date_creation'))
-        anciennete = ""
-        if date_creation:
+
+        # Anciennete
+        annee_creation = ''
+        if date_creation and len(date_creation) >= 4:
             try:
-                year = int(str(date_creation)[:4])
-                anciennete = str(datetime.now().year - year)
-            except Exception:
+                annee_creation = str(int(date_creation[:4]))
+            except ValueError:
                 pass
 
-        # Paragraphe 1 : Salutation
-        p = doc.add_paragraph()
-        run = p.add_run("Madame, Monsieur,")
-        run.font.size = Pt(11)
+        # --- 1. Date (P2) ---
+        _replace_in_paragraph(doc.paragraphs[2], '18 février 2026', _format_date_fr())
 
-        doc.add_paragraph()
-
-        # Paragraphe 2 : Introduction + anciennete
-        texte1 = (
-            f"Nous nous permettons de vous adresser ce courrier car le profil "
-            f"de {entreprise} a retenu notre attention."
-        )
-        if anciennete:
-            texte1 += (
-                f" En tant qu'acteur \u00e9tabli dans votre secteur d'activit\u00e9, "
-                f"avec {anciennete} ann\u00e9es d'existence"
-            )
-            if region:
-                texte1 += f" et une pr\u00e9sence reconnue en {region}"
-            texte1 += (
-                ", votre entreprise correspond aux crit\u00e8res des "
-                "soci\u00e9t\u00e9s que nous accompagnons."
-            )
+        # --- 2. Salutation (P9) ---
+        if dirigeant:
+            _set_paragraph_text(doc.paragraphs[9], f"Monsieur {dirigeant},")
         else:
-            texte1 += (
-                " Votre entreprise correspond aux crit\u00e8res des "
-                "soci\u00e9t\u00e9s que nous accompagnons."
-            )
+            _set_paragraph_text(doc.paragraphs[9], "Madame, Monsieur,")
 
-        p = doc.add_paragraph()
-        run = p.add_run(texte1)
-        run.font.size = Pt(11)
+        # --- 3. Paragraphe intro personnalise (P11) ---
+        intro = self._build_intro(entreprise, annee_creation, secteur, dirigeant)
+        _set_paragraph_text(doc.paragraphs[11], intro)
 
-        doc.add_paragraph()
-
-        # Paragraphe 3 : Proposition
-        texte2 = (
-            f"Notre cabinet intervient aupr\u00e8s de dirigeants de PME et ETI "
-            f"dans leurs r\u00e9flexions strat\u00e9giques : op\u00e9rations de "
-            f"croissance externe, cession, transmission, ou encore lev\u00e9e de fonds. "
-            f"Nous serions ravis de pouvoir \u00e9changer avec vous sur vos projets "
-            f"et ambitions pour {entreprise}."
-        )
-
-        p = doc.add_paragraph()
-        run = p.add_run(texte2)
-        run.font.size = Pt(11)
-
-        doc.add_paragraph()
-
-        # Paragraphe 4 : Appel a l'action
-        texte3 = (
-            "Je me tiens \u00e0 votre disposition pour convenir d'un entretien "
-            "\u00e0 votre convenance."
-        )
-
-        p = doc.add_paragraph()
-        run = p.add_run(texte3)
-        run.font.size = Pt(11)
-
-        doc.add_paragraph()
-
-        # Formule de politesse
-        texte4 = (
-            "Dans l'attente de votre retour, je vous prie d'agr\u00e9er, "
-            "Madame, Monsieur, l'expression de mes salutations distingu\u00e9es."
-        )
-
-        p = doc.add_paragraph()
-        run = p.add_run(texte4)
-        run.font.size = Pt(11)
-
-        doc.add_paragraph()
-        doc.add_paragraph()
-
-        # Signature placeholder
-        p = doc.add_paragraph()
-        run = p.add_run("[Votre nom]")
-        run.bold = True
-        run.font.size = Pt(11)
-
-        p = doc.add_paragraph()
-        run = p.add_run("[Votre cabinet]")
-        run.italic = True
-        run.font.size = Pt(10)
-        run.font.color.rgb = RGBColor(100, 100, 100)
-
-        # Sauvegarder en BytesIO
+        # Sauvegarder en memoire
         buffer = BytesIO()
         doc.save(buffer)
         buffer.seek(0)
         return buffer
+
+    def _build_intro(self, entreprise, annee_creation, secteur, dirigeant):
+        """Construit le paragraphe d'introduction personnalise (P11)."""
+        parts = []
+
+        if dirigeant and annee_creation:
+            parts.append(
+                f"Sous votre impulsion et depuis {annee_creation}, "
+                f"{entreprise} s\u2019est affirm\u00e9e comme une entreprise "
+                f"r\u00e9f\u00e9rente"
+            )
+        elif annee_creation:
+            parts.append(
+                f"Depuis {annee_creation}, {entreprise} s\u2019est affirm\u00e9e "
+                f"comme une entreprise r\u00e9f\u00e9rente"
+            )
+        else:
+            parts.append(
+                f"{entreprise} s\u2019est affirm\u00e9e comme une entreprise "
+                f"r\u00e9f\u00e9rente"
+            )
+
+        if secteur:
+            parts.append(f" dans le secteur {secteur}")
+
+        parts.append(
+            ", et ce, dans un environnement en perp\u00e9tuelle \u00e9volution."
+        )
+
+        return ''.join(parts)
 
     def generate_filename(self, prospect: dict) -> str:
         """Genere un nom de fichier normalise pour la lettre."""
