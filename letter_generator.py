@@ -129,8 +129,13 @@ def _format_civilite(dirigeant_full):
     if not dirigeant_full:
         return 'Madame, Monsieur,'
 
-    # Retirer TOUT ce qui est entre parentheses
-    nom_clean = re.sub(r'\([^)]*\)', '', dirigeant_full).strip()
+    # Personne morale uniquement → salutation generique
+    if dirigeant_full.startswith('PM:'):
+        return 'Madame, Monsieur,'
+
+    # Retirer TOUT ce qui est entre parentheses ou crochets
+    nom_clean = re.sub(r'\([^)]*\)', '', dirigeant_full)
+    nom_clean = re.sub(r'\[[^\]]*\]', '', nom_clean).strip()
     if not nom_clean:
         return 'Madame, Monsieur,'
 
@@ -144,8 +149,9 @@ def _format_civilite(dirigeant_full):
     prenom = parts[0]
     nom_famille = ' '.join(parts[1:])
 
-    # Detecter le genre
-    civilite = 'Madame' if prenom.lower() in PRENOMS_FEMININS else 'Monsieur'
+    # Detecter le genre (gerer les prenoms composes : Marie-Laure → Marie)
+    prenom_test = prenom.split('-')[0].lower()
+    civilite = 'Madame' if prenom_test in PRENOMS_FEMININS else 'Monsieur'
 
     # Nom en format Titre
     nom_formate = nom_famille.title()

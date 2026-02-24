@@ -116,14 +116,14 @@ class DataGouvScraper:
         region_code = filtres.get('region')
         target_depts = REGION_DEPARTEMENTS.get(region_code, []) if region_code else []
 
-        # Filtre CA — appliqué ici pour ne pas perdre de résultats après
+        # Filtre CA — passé directement à l'API (server-side, 100% fill rate)
         ca_min = filtres.get('ca_min', 0) or 0
         ca_max = filtres.get('ca_max', 0) or 0
 
         print(f"\n[Scraper] Recherche data.gouv.fr...")
         print(f"  Limite cible: {limit}")
         if ca_min > 0 or ca_max > 0:
-            print(f"  Filtre CA: {ca_min/1e6:.0f}M - {ca_max/1e6:.0f}M (applique dans la boucle)")
+            print(f"  Filtre CA: {ca_min/1e6:.0f}M - {ca_max/1e6:.0f}M (filtre API server-side)")
         if region_code:
             print(f"  Region: {config.REGIONS.get(region_code, region_code)} → departements siege: {target_depts}")
 
@@ -159,6 +159,12 @@ class DataGouvScraper:
         if forme and forme in FORME_TO_NATURE:
             params['nature_juridique'] = ','.join(FORME_TO_NATURE[forme])
             print(f"  Forme: {forme} → {FORME_TO_NATURE[forme]}")
+
+        # CA server-side (API filtre et ne retourne que les entreprises avec CA connu)
+        if ca_min > 0:
+            params['ca_min'] = int(ca_min)
+        if ca_max > 0:
+            params['ca_max'] = int(ca_max)
 
         # Pagination et collecte
         all_companies = []
@@ -231,14 +237,7 @@ class DataGouvScraper:
                         if age_dir_max > 0 and age_dir > age_dir_max:
                             continue
 
-                    # Filtre CA (depuis finances API) — garde les CA inconnus
-                    if ca_min > 0 or ca_max > 0:
-                        company_ca, _ = self._extract_finances(company)
-                        if company_ca is not None:
-                            if ca_min > 0 and company_ca < ca_min:
-                                continue
-                            if ca_max > 0 and company_ca > ca_max:
-                                continue
+                    # CA est filtré server-side via params ca_min/ca_max
 
                     seen_sirens.add(siren)
                     all_companies.append(company)
@@ -342,16 +341,87 @@ class DataGouvScraper:
             parts.append(' '.join(cp_ville))
         return ', '.join(parts) if parts else ''
 
+    def _find_dirigeant_pp(self, dirigeants: list) -> tuple:
+        """
+        Parcourt la liste des dirigeants pour trouver une personne physique.
+        Retourne (pp_dict, pm_display_name, pm_siren).
+        """
+        personne_physique = None
+        personne_morale = None
+        pm_siren = None
+
+        for d in dirigeants:
+            type_dir = (d.get('type_dirigeant') or '').lower()
+            prenoms = d.get('prenoms') or ''
+
+            if type_dir == 'personne morale' or not prenoms:
+                # C'est une personne morale
+                if not personne_morale:
+                    denomination = d.get('denomination') or d.get('nom') or ''
+                    qualite = d.get('qualite') or ''
+                    personne_morale = f"{denomination} ({qualite})" if qualite else denomination
+                    pm_siren = d.get('siren') or ''
+            else:
+                # C'est une personne physique
+                if not personne_physique:
+                    personne_physique = d
+
+        return personne_physique, personne_morale, pm_siren
+
+    def _deep_lookup_pm(self, siren_pm: str) -> Optional[Dict]:
+        """Cherche le dirigeant PP derriere une personne morale via son SIREN."""
+        if not siren_pm:
+            return None
+        try:
+            r = self.session.get(
+                self.BASE_URL,
+                params={'q': siren_pm, 'per_page': 1},
+                timeout=5,
+            )
+            if r.status_code == 200:
+                results = r.json().get('results', [])
+                if results:
+                    pm_dirs = results[0].get('dirigeants', [])
+                    for d in pm_dirs:
+                        if (d.get('type_dirigeant', '').lower() == 'personne physique'
+                                and d.get('prenoms')):
+                            return d
+        except Exception:
+            pass
+        return None
+
     def _extract_dirigeant(self, company: Dict) -> str:
-        """Extrait le nom du dirigeant principal"""
+        """
+        Extrait le dirigeant principal (personne physique).
+        Si le premier dirigeant est une PM, cherche la PP dans la liste
+        puis en deep lookup via le SIREN de la PM.
+        """
         try:
             dirigeants = company.get('dirigeants', [])
-            if dirigeants:
-                premier = dirigeants[0]
-                nom = premier.get('nom', '')
-                prenom = premier.get('prenoms', '')
-                qualite = premier.get('qualite', '')
-                return f"{prenom} {nom} ({qualite})".strip()
+            if not dirigeants:
+                return ""
+
+            pp, pm_name, pm_siren = self._find_dirigeant_pp(dirigeants)
+
+            # Deep lookup si on n'a qu'une PM
+            found_via_pm = False
+            if not pp and pm_siren:
+                pp = self._deep_lookup_pm(pm_siren)
+                if pp:
+                    found_via_pm = True
+
+            if pp:
+                prenoms = pp.get('prenoms', '')
+                nom = pp.get('nom', '')
+                qualite = pp.get('qualite', '')
+                result = f"{prenoms} {nom} ({qualite})".strip()
+                # Ajouter la PM si la PP a ete trouvee via deep lookup
+                if found_via_pm and pm_name:
+                    pm_short = pm_name.split('(')[0].strip()
+                    result += f" [via {pm_short}]"
+                return result
+            elif pm_name:
+                return f"PM: {pm_name}"
             return ""
         except Exception:
             return ""
@@ -371,12 +441,20 @@ class DataGouvScraper:
             return None, None
 
     def _extract_age_dirigeant(self, company: Dict) -> Optional[int]:
-        """Extrait l'âge du dirigeant depuis date_de_naissance de l'API (format: '1972-12')"""
+        """Extrait l'âge du dirigeant PP depuis date_de_naissance (format: '1972-12')"""
         try:
             dirigeants = company.get('dirigeants', [])
             if not dirigeants:
                 return None
-            date_naissance = dirigeants[0].get('date_de_naissance', '')
+
+            # Trouver la personne physique (pas la PM)
+            pp, _, pm_siren = self._find_dirigeant_pp(dirigeants)
+            if not pp and pm_siren:
+                pp = self._deep_lookup_pm(pm_siren)
+            if not pp:
+                return None
+
+            date_naissance = pp.get('date_de_naissance', '')
             if not date_naissance or len(date_naissance) < 4:
                 return None
             birth_year = int(date_naissance[:4])
