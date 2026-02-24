@@ -258,10 +258,11 @@ Réponds UNIQUEMENT avec le paragraphe, sans guillemets, sans explication."""
 class LetterGenerator:
     """Genere des lettres Word a partir du template Mirabaud."""
 
-    def __init__(self, output_dir: str = "lettres", template_path: str = None, api_key: str = None):
-        self.output_dir = output_dir
+    def __init__(self, template_path=None, output_dir="lettres", api_key=None):
         self.template_path = template_path or TEMPLATE_PATH
+        self.output_dir = output_dir
         self.api_key = api_key or os.environ.get('ANTHROPIC_API_KEY', '')
+        os.makedirs(output_dir, exist_ok=True)
 
     def generate_letter(self, prospect: dict) -> BytesIO:
         """
