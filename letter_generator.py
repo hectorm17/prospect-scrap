@@ -184,28 +184,101 @@ def _get_secteur_text(prospect):
     return libelle[0].lower() + libelle[1:]
 
 
-def _download_logo(domain):
+def _try_download(url, timeout=5):
+    """Telecharge une URL image. Retourne les bytes ou None."""
+    try:
+        r = requests.get(url, timeout=timeout, headers={'User-Agent': 'Mozilla/5.0'})
+        if r.status_code == 200 and len(r.content) > 100:
+            return r.content
+    except Exception:
+        pass
+    return None
+
+
+def _scrape_logo_from_site(site_url):
     """
-    Telecharge le logo d'une entreprise. Essaie plusieurs sources.
+    Visite le site web et cherche le logo dans les balises HTML :
+    apple-touch-icon, og:image, <img> avec "logo", favicon HD.
+    """
+    try:
+        from bs4 import BeautifulSoup
+        r = requests.get(site_url, timeout=5, headers={'User-Agent': 'Mozilla/5.0'})
+        if r.status_code != 200:
+            return None
+
+        soup = BeautifulSoup(r.text, 'html.parser')
+        parsed = urlparse(site_url)
+        base_url = f"{parsed.scheme}://{parsed.netloc}"
+
+        def make_abs(url):
+            if url.startswith('http'):
+                return url
+            if url.startswith('//'):
+                return 'https:' + url
+            if url.startswith('/'):
+                return base_url + url
+            return base_url + '/' + url
+
+        candidates = []
+
+        # 1. apple-touch-icon (meilleure qualite, toujours carre 180x180+)
+        for link in soup.find_all('link', rel=lambda x: x and 'apple-touch-icon' in ' '.join(x).lower()):
+            href = link.get('href', '')
+            if href:
+                candidates.append(make_abs(href))
+
+        # 2. og:image
+        og = soup.find('meta', property='og:image')
+        if og and og.get('content'):
+            candidates.append(make_abs(og['content']))
+
+        # 3. <img> avec "logo" dans les attributs
+        for img in soup.find_all('img'):
+            src = img.get('src', '')
+            attrs = f"{img.get('alt', '')} {' '.join(img.get('class', []))} {img.get('id', '')}".lower()
+            if src and ('logo' in src.lower() or 'logo' in attrs):
+                candidates.append(make_abs(src))
+
+        # 4. Favicon HD
+        for link in soup.find_all('link', rel=lambda x: x and 'icon' in ' '.join(x).lower()):
+            href = link.get('href', '')
+            sizes = link.get('sizes', '')
+            if href and any(s in sizes for s in ['32', '64', '96', '128', '192', '256']):
+                candidates.append(make_abs(href))
+
+        # Telecharger les candidats par priorite
+        for url in candidates:
+            img_bytes = _try_download(url)
+            if img_bytes and len(img_bytes) > 2000:
+                return img_bytes
+
+    except Exception:
+        pass
+    return None
+
+
+def _fetch_best_logo(site_web):
+    """
+    3 sources en cascade pour trouver un logo de qualite.
     Retourne les bytes de l'image ou None.
-    Seuil : > 1000 bytes pour eviter les favicons flous.
     """
+    if not site_web:
+        return None
+
+    domain = _extract_domain(site_web)
     if not domain:
         return None
 
-    sources = [
-        f'https://img.companyenrich.com/logo?domain={domain}&format=png',
-        f'https://logo.clearbit.com/{domain}',
-        f'https://www.google.com/s2/favicons?domain={domain}&sz=128',
-    ]
+    # Methode 1 : Scraper le site web pour trouver le logo
+    url = site_web if site_web.startswith('http') else f'https://{site_web}'
+    logo = _scrape_logo_from_site(url)
+    if logo and len(logo) > 2000:
+        return logo
 
-    for url in sources:
-        try:
-            r = requests.get(url, timeout=5)
-            if r.status_code == 200 and len(r.content) > 1000:
-                return r.content
-        except Exception:
-            continue
+    # Methode 2 : Google Favicons (dernier recours)
+    logo = _try_download(f'https://www.google.com/s2/favicons?domain={domain}&sz=128')
+    if logo and len(logo) > 1000:
+        return logo
 
     return None
 
@@ -357,28 +430,24 @@ class LetterGenerator:
 
     def _replace_logo(self, doc, site_web):
         """
-        Supprime le logo Bonna Sabla (drawing dans P0).
-        Si le prospect a un site web, insere son logo a la place.
+        Remplace image4.png (logo Bonna Sabla) par le logo du prospect.
+        Si pas de logo prospect, supprime le drawing de P0.
         """
+        logo_bytes = _fetch_best_logo(site_web)
+
+        if logo_bytes:
+            # Methode 1 : remplacer les bytes de image4.png directement
+            for rel_id, rel in doc.part.rels.items():
+                if 'image' in rel.reltype and 'image4' in (rel.target_ref or ''):
+                    rel.target_part._blob = logo_bytes
+                    return
+
+        # Pas de logo ou image4 non trouvee → supprimer le drawing de P0
         p0 = doc.paragraphs[0]
         ns_w = 'http://schemas.openxmlformats.org/wordprocessingml/2006/main'
-
-        # Supprimer tous les drawings de P0
         for run_elem in p0._element.findall(f'{{{ns_w}}}r'):
             for drawing in run_elem.findall(f'{{{ns_w}}}drawing'):
                 run_elem.remove(drawing)
-
-        # Telecharger et inserer le logo du prospect
-        domain = _extract_domain(site_web)
-        logo_bytes = _download_logo(domain)
-        if logo_bytes:
-            try:
-                img_stream = BytesIO(logo_bytes)
-                p0.alignment = WD_ALIGN_PARAGRAPH.RIGHT
-                run = p0.runs[0] if p0.runs else p0.add_run()
-                run.add_picture(img_stream, width=Inches(1.0))
-            except Exception:
-                pass
 
     def _build_intro(self, entreprise, annee_creation, secteur, dirigeant):
         """Construit le paragraphe d'introduction personnalise (P11). Fallback sans IA."""
