@@ -1,15 +1,18 @@
 """
 Generation de lettres Word (.docx) personnalisees a partir du template Mirabaud.
 Copie le template et remplace les champs personnalisables (date, dirigeant, entreprise, secteur).
-Tout le reste (header, footer, logo Mirabaud, mise en page) est preserve.
+Tout le reste (header Mirabaud, footer legal, mise en page) est preserve.
 """
 
 import os
 import re
+import requests
 from io import BytesIO
 from datetime import datetime
+from urllib.parse import urlparse
 
 from docx import Document
+from docx.opc.constants import RELATIONSHIP_TYPE as RT
 
 
 MOIS_FR = {
@@ -19,8 +22,37 @@ MOIS_FR = {
     'October': 'octobre', 'November': 'novembre', 'December': 'décembre'
 }
 
-# Template path (relative to project root)
 TEMPLATE_PATH = os.path.join(os.path.dirname(__file__), 'templates', 'lettre_template.docx')
+
+PRENOMS_FEMININS = {
+    'maria', 'marie', 'anne', 'sophie', 'catherine', 'isabelle', 'nathalie',
+    'christine', 'sylvie', 'patricia', 'florence', 'sandrine', 'valérie',
+    'valerie', 'caroline', 'julie', 'laura', 'sarah', 'emma', 'alice',
+    'claire', 'marguerite', 'louise', 'charlotte', 'camille', 'lucie',
+    'brigitte', 'monique', 'nicole', 'danielle', 'françoise', 'francoise',
+    'martine', 'véronique', 'veronique', 'dominique', 'céline', 'celine',
+    'audrey', 'stéphanie', 'stephanie', 'virginie', 'delphine', 'hélène',
+    'helene', 'emilie', 'alexandra', 'béatrice', 'beatrice', 'corinne',
+    'myriam', 'muriel', 'chantal', 'agnès', 'agnes', 'laurence',
+    'annick', 'joëlle', 'joelle', 'michèle', 'michele', 'pascale',
+    'rosalie', 'sabine', 'ségolène', 'segolene', 'élise', 'elise',
+    'laetitia', 'léa', 'lea', 'manon', 'océane', 'oceane', 'pauline',
+    'amandine', 'mathilde', 'juliette', 'clémence', 'clemence', 'eva',
+    'inès', 'ines', 'agathe', 'constance', 'gaëlle', 'gaelle',
+    'madeleine', 'jeanne', 'thérèse', 'therese', 'simone', 'yvonne',
+    'geneviève', 'genevieve', 'colette', 'jacqueline', 'josette',
+    'mireille', 'odette', 'suzanne', 'antoinette', 'bernadette',
+    'denise', 'germaine', 'henriette', 'lucienne', 'marcelle',
+    'pierrette', 'renée', 'renee', 'solange', 'yvette',
+}
+
+# Fonctions a retirer du nom du dirigeant
+FONCTIONS_REGEX = re.compile(
+    r'\s*\((?:Administrateur|Président|Directeur[^)]*|Gérant|'
+    r'PDG|DG|Membre[^)]*|Associé[^)]*|Liquidateur[^)]*|'
+    r'Commissaire[^)]*|Secrétaire[^)]*)\)',
+    re.IGNORECASE
+)
 
 
 def _clean(val, default=''):
@@ -32,52 +64,52 @@ def _clean(val, default=''):
     return str(val) if val else default
 
 
-def _replace_in_paragraph(paragraph, old_text, new_text):
-    """
-    Remplace old_text par new_text dans un paragraphe, meme si le texte
-    est reparti sur plusieurs runs. Preserve le formatage du premier run.
-    Retourne True si un remplacement a eu lieu.
-    """
-    full_text = paragraph.text
-    if old_text not in full_text:
-        return False
-
-    # Cas simple : le texte est dans un seul run
-    for run in paragraph.runs:
-        if old_text in run.text:
-            run.text = run.text.replace(old_text, new_text)
-            return True
-
-    # Cas complexe : le texte est reparti sur plusieurs runs
-    # On fusionne tout dans le premier run et on vide les autres
-    combined = full_text.replace(old_text, new_text)
-    paragraph.runs[0].text = combined
-    for run in paragraph.runs[1:]:
-        run.text = ''
-    return True
-
-
-def _set_paragraph_text(paragraph, new_text):
-    """
-    Remplace tout le texte d'un paragraphe en preservant le formatage du premier run.
-    """
-    if paragraph.runs:
-        paragraph.runs[0].text = new_text
-        for run in paragraph.runs[1:]:
-            run.text = ''
-    else:
-        paragraph.add_run(new_text)
-
-
 def _format_date_fr():
     """Retourne la date du jour en francais : '24 février 2026'"""
     date_str = datetime.now().strftime("%d %B %Y")
     for en, fr in MOIS_FR.items():
         date_str = date_str.replace(en, fr)
-    # Supprimer le zero initial (01 -> 1)
     if date_str.startswith('0'):
         date_str = date_str[1:]
     return date_str
+
+
+def _detect_civilite(dirigeant_full):
+    """
+    Detecte la civilite (Madame/Monsieur) a partir du prenom.
+    Retourne (civilite, nom_famille).
+    """
+    if not dirigeant_full:
+        return 'Madame, Monsieur', ''
+
+    # Retirer la fonction entre parentheses
+    nom_clean = FONCTIONS_REGEX.sub('', dirigeant_full).strip()
+    if not nom_clean:
+        return 'Madame, Monsieur', ''
+
+    parts = nom_clean.split()
+    if len(parts) < 2:
+        return 'Monsieur', nom_clean
+
+    prenom = parts[0].lower()
+    nom_famille = ' '.join(parts[1:])
+
+    if prenom in PRENOMS_FEMININS:
+        return 'Madame', nom_famille
+    return 'Monsieur', nom_famille
+
+
+def _extract_domain(site_web):
+    """Extrait le domaine d'une URL de site web."""
+    if not site_web:
+        return ''
+    url = str(site_web).strip()
+    if not url.startswith(('http://', 'https://')):
+        url = 'https://' + url
+    try:
+        return urlparse(url).netloc.lower().replace('www.', '')
+    except Exception:
+        return ''
 
 
 class LetterGenerator:
@@ -90,9 +122,10 @@ class LetterGenerator:
     def generate_letter(self, prospect: dict) -> BytesIO:
         """
         Copie le template Mirabaud et personnalise :
-        - Date (P2)
-        - Salutation (P9) : "Monsieur Le Calvé," -> dirigeant du prospect
-        - Paragraphe intro (P11) : entreprise, anciennete, secteur
+        - Logo (P0) : remplace l'image Bonna Sabla par le favicon du prospect
+        - Date (P2) : date du jour en francais
+        - Salutation (P9) : civilite + nom de famille du dirigeant
+        - Intro (P11) : entreprise, anciennete, secteur d'activite
         Retourne un BytesIO contenant le .docx.
         """
         doc = Document(self.template_path)
@@ -101,6 +134,7 @@ class LetterGenerator:
         dirigeant = _clean(prospect.get('dirigeant_enrichi')) or _clean(prospect.get('dirigeant_principal'))
         secteur = _clean(prospect.get('libelle_naf'))
         date_creation = _clean(prospect.get('date_creation'))
+        site_web = _clean(prospect.get('site_web'))
 
         # Anciennete
         annee_creation = ''
@@ -110,24 +144,95 @@ class LetterGenerator:
             except ValueError:
                 pass
 
-        # --- 1. Date (P2) ---
-        _replace_in_paragraph(doc.paragraphs[2], '18 février 2026', _format_date_fr())
+        # --- FIX 1 : Logo (P0) ---
+        self._replace_logo(doc, site_web)
 
-        # --- 2. Salutation (P9) ---
-        if dirigeant:
-            _set_paragraph_text(doc.paragraphs[9], f"Monsieur {dirigeant},")
+        # --- FIX 4 : Date (P2) --- remplacer par index, pas par texte
+        para_date = doc.paragraphs[2]
+        for run in para_date.runs:
+            run.text = ''
+        if para_date.runs:
+            para_date.runs[0].text = f"Paris, le {_format_date_fr()}"
+
+        # --- FIX 2 : Civilite + nom de famille (P9) ---
+        civilite, nom_famille = _detect_civilite(dirigeant)
+        if nom_famille:
+            salutation = f"{civilite} {nom_famille},"
         else:
-            _set_paragraph_text(doc.paragraphs[9], "Madame, Monsieur,")
+            salutation = f"{civilite},"
+        para_salut = doc.paragraphs[9]
+        for run in para_salut.runs:
+            run.text = ''
+        if para_salut.runs:
+            para_salut.runs[0].text = salutation
 
-        # --- 3. Paragraphe intro personnalise (P11) ---
+        # --- FIX 3 : Intro personnalisee (P11) --- remplacer par index
         intro = self._build_intro(entreprise, annee_creation, secteur, dirigeant)
-        _set_paragraph_text(doc.paragraphs[11], intro)
+        para_intro = doc.paragraphs[11]
+        for run in para_intro.runs:
+            run.text = ''
+        if para_intro.runs:
+            para_intro.runs[0].text = intro
 
         # Sauvegarder en memoire
         buffer = BytesIO()
         doc.save(buffer)
         buffer.seek(0)
         return buffer
+
+    def _replace_logo(self, doc, site_web):
+        """
+        Remplace l'image Bonna Sabla (P0, rId12) par le favicon du prospect.
+        Si pas de site web, supprime l'image.
+        """
+        p0 = doc.paragraphs[0]
+        ns_a = 'http://schemas.openxmlformats.org/drawingml/2006/main'
+        blips = p0._element.findall(f'.//{{{ns_a}}}blip')
+
+        if not blips:
+            return
+
+        blip = blips[0]
+        ns_r = 'http://schemas.openxmlformats.org/officeDocument/2006/relationships'
+        embed_attr = f'{{{ns_r}}}embed'
+        old_rid = blip.get(embed_attr)
+
+        if not old_rid:
+            return
+
+        domain = _extract_domain(site_web)
+        if not domain:
+            # Pas de site web -> supprimer le dessin entier de P0
+            ns_w = 'http://schemas.openxmlformats.org/wordprocessingml/2006/main'
+            drawings = p0._element.findall(f'{{{ns_w}}}r/{{{ns_w}}}drawing')
+            for drawing in drawings:
+                drawing.getparent().remove(drawing)
+            return
+
+        # Telecharger le favicon
+        favicon_url = f"https://www.google.com/s2/favicons?domain={domain}&sz=128"
+        try:
+            r = requests.get(favicon_url, timeout=5)
+            if r.status_code != 200 or len(r.content) < 100:
+                # Favicon trop petit ou erreur -> supprimer le logo
+                self._remove_drawing(p0)
+                return
+            favicon_bytes = r.content
+        except Exception:
+            self._remove_drawing(p0)
+            return
+
+        # Remplacer le blob de l'image existante
+        old_rel = doc.part.rels[old_rid]
+        old_rel.target_part._blob = favicon_bytes
+
+    def _remove_drawing(self, paragraph):
+        """Supprime tous les elements drawing d'un paragraphe."""
+        ns_w = 'http://schemas.openxmlformats.org/wordprocessingml/2006/main'
+        for run_elem in paragraph._element.findall(f'{{{ns_w}}}r'):
+            drawings = run_elem.findall(f'{{{ns_w}}}drawing')
+            for d in drawings:
+                run_elem.remove(d)
 
     def _build_intro(self, entreprise, annee_creation, secteur, dirigeant):
         """Construit le paragraphe d'introduction personnalise (P11)."""
