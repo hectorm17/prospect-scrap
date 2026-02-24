@@ -9,6 +9,8 @@ IMPORTANT:
 - Pour filtrer par secteur large (2 chiffres), on utilise section_activite_principale
 """
 
+import json
+import os
 import requests
 import pandas as pd
 import time
@@ -76,6 +78,15 @@ FORME_TO_NATURE = {
     "SA": ["5505", "5510", "5515", "5520", "5522", "5525", "5530", "5599"],
     "SCI": ["6540"],
 }
+
+# Mapping code NAF (ex: "62.01Z") → libellé en français
+# Source : SocialGouv/codes-naf (données INSEE)
+_NAF_JSON = os.path.join(os.path.dirname(__file__), 'data', 'naf_codes.json')
+try:
+    with open(_NAF_JSON, encoding='utf-8') as _f:
+        NAF_LABELS = {e['id']: e['label'] for e in json.load(_f)}
+except FileNotFoundError:
+    NAF_LABELS = {}
 
 
 class DataGouvScraper:
@@ -284,7 +295,7 @@ class DataGouvScraper:
                     'siret_siege': siege.get('siret', ''),
                     'forme_juridique': company.get('nature_juridique', ''),
                     'code_naf': company.get('activite_principale', ''),
-                    'libelle_naf': company.get('libelle_activite_principale', ''),
+                    'libelle_naf': NAF_LABELS.get(company.get('activite_principale', ''), ''),
                     'date_creation': company.get('date_creation', ''),
                     'tranche_effectif': TRANCHES_EFFECTIF.get(tranche_code, tranche_code),
                     'categorie': company.get('categorie_entreprise', ''),
