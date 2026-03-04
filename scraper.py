@@ -105,14 +105,19 @@ class DataGouvScraper:
 
     def __init__(self):
         self.session = requests.Session()
+        # Headers réalistes pour éviter le blocage Cloudflare (Streamlit Cloud = AWS US)
         self.session.headers.update({
-            'User-Agent': config.SCRAPING_CONFIG['user_agent'],
-            'Accept': 'application/json',
+            'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
+            'Accept': 'application/json, text/plain, */*',
+            'Accept-Language': 'fr-FR,fr;q=0.9,en-US;q=0.8,en;q=0.7',
+            'Accept-Encoding': 'gzip, deflate, br',
+            'Connection': 'keep-alive',
+            'Cache-Control': 'no-cache',
         })
         # Retry automatique sur erreurs réseau / 5xx
         retry = Retry(
             total=3,
-            backoff_factor=1,
+            backoff_factor=2,
             status_forcelist=[500, 502, 503, 504, 429],
             allowed_methods=["GET"],
         )
@@ -194,134 +199,169 @@ class DataGouvScraper:
         all_companies = []
         seen_sirens = set()
         page = 1
+        max_retries_per_page = 3  # Retry si Cloudflare bloque (réponse HTML)
 
         while page <= self.MAX_PAGES:
             params['page'] = page
 
-            try:
-                response = self.session.get(
-                    self.BASE_URL,
-                    params=params,
-                    timeout=self.REQUEST_TIMEOUT,
-                )
-                self._log(f"  Page {page}: HTTP {response.status_code}, "
-                          f"Content-Type: {response.headers.get('content-type', '?')}")
-
-                response.raise_for_status()
-
-                # Vérifier que la réponse est bien du JSON
-                ct = response.headers.get('content-type', '')
-                if 'application/json' not in ct:
-                    body_preview = response.text[:300].replace('\n', ' ')
-                    msg = (f"L'API ne retourne pas du JSON "
-                           f"(Content-Type: {ct}). Réponse: {body_preview}")
-                    self._log(f"  {msg}")
-                    if page == 1:
-                        raise RuntimeError(msg)
-                    break
-
+            # Retry par page (Cloudflare peut bloquer puis laisser passer)
+            response = None
+            data = None
+            for attempt in range(1, max_retries_per_page + 1):
                 try:
-                    data = response.json()
-                except ValueError:
-                    body_preview = response.text[:300].replace('\n', ' ')
-                    msg = f"JSON invalide. Réponse brute: {body_preview}"
-                    self._log(f"  {msg}")
-                    if page == 1:
-                        raise RuntimeError(msg)
+                    response = self.session.get(
+                        self.BASE_URL,
+                        params=params,
+                        timeout=self.REQUEST_TIMEOUT,
+                    )
+                    self._log(f"  Page {page} (tentative {attempt}): HTTP {response.status_code}, "
+                              f"Content-Type: {response.headers.get('content-type', '?')}")
+
+                    response.raise_for_status()
+
+                    # Vérifier que la réponse est bien du JSON
+                    ct = response.headers.get('content-type', '')
+                    if 'application/json' not in ct:
+                        body_preview = response.text[:300].replace('\n', ' ')
+                        self._log(f"  Pas de JSON (blocage probable). Réponse: {body_preview[:150]}")
+                        if attempt < max_retries_per_page:
+                            wait = attempt * 3  # 3s, 6s
+                            self._log(f"  Retry dans {wait}s...")
+                            time.sleep(wait)
+                            continue
+                        msg = (f"L'API ne retourne pas du JSON après {max_retries_per_page} tentatives "
+                               f"(Content-Type: {ct}). Blocage Cloudflare probable.")
+                        self._log(f"  {msg}")
+                        if page == 1:
+                            raise RuntimeError(msg)
+                        break
+
+                    try:
+                        data = response.json()
+                    except ValueError:
+                        body_preview = response.text[:300].replace('\n', ' ')
+                        self._log(f"  JSON invalide. Réponse: {body_preview[:150]}")
+                        if attempt < max_retries_per_page:
+                            wait = attempt * 3
+                            self._log(f"  Retry dans {wait}s...")
+                            time.sleep(wait)
+                            continue
+                        msg = f"JSON invalide après {max_retries_per_page} tentatives."
+                        self._log(f"  {msg}")
+                        if page == 1:
+                            raise RuntimeError(msg)
+                        break
+
+                    # JSON OK → sortir de la boucle retry
                     break
 
-                if 'erreur' in data:
-                    msg = f"Erreur API: {data['erreur'][:200]}"
+                except (requests.exceptions.ConnectionError,
+                        requests.exceptions.Timeout) as e:
+                    self._log(f"  Erreur réseau tentative {attempt}: {type(e).__name__}")
+                    if attempt < max_retries_per_page:
+                        wait = attempt * 3
+                        self._log(f"  Retry dans {wait}s...")
+                        time.sleep(wait)
+                        continue
+                    if page == 1:
+                        raise RuntimeError(
+                            f"Impossible de joindre l'API data.gouv.fr après {max_retries_per_page} tentatives "
+                            f"({type(e).__name__}). Réessayez dans quelques minutes."
+                        ) from e
+                    break
+                except RuntimeError:
+                    raise
+                except Exception as e:
+                    msg = f"Erreur page {page}: {type(e).__name__}: {e}"
                     self._log(f"  {msg}")
                     if page == 1:
-                        raise RuntimeError(msg)
+                        raise
                     break
 
-                results = data.get('results', [])
-                total = data.get('total_results', 0)
+            # Si pas de data JSON valide après retries, arrêter
+            if data is None:
+                if page == 1 and not all_companies:
+                    raise RuntimeError(
+                        "Aucune réponse JSON valide de l'API. "
+                        "L'API est peut-être temporairement inaccessible depuis ce serveur."
+                    )
+                break
 
+            if 'erreur' in data:
+                msg = f"Erreur API: {data['erreur'][:200]}"
+                self._log(f"  {msg}")
                 if page == 1:
-                    self._log(f"  API: {total} résultats totaux")
+                    raise RuntimeError(msg)
+                break
 
-                if not results:
-                    self._log(f"  Page {page}: aucun résultat, arrêt")
-                    break
+            results = data.get('results', [])
+            total = data.get('total_results', 0)
 
-                # Post-filtrage par siège
-                added = 0
-                for company in results:
-                    siren = company.get('siren')
-                    if not siren or siren in seen_sirens:
+            if page == 1:
+                self._log(f"  API: {total} résultats totaux")
+
+            if not results:
+                self._log(f"  Page {page}: aucun résultat, arrêt")
+                break
+
+            # Post-filtrage par siège
+            added = 0
+            for company in results:
+                siren = company.get('siren')
+                if not siren or siren in seen_sirens:
+                    continue
+
+                siege = company.get('siege', {})
+
+                # Filtre région: vérifier le département du SIÈGE
+                if target_depts:
+                    siege_dept = siege.get('departement', '')
+                    if siege_dept not in target_depts:
                         continue
 
-                    siege = company.get('siege', {})
+                # Filtre NAF 2 chiffres: section est trop large, post-filtre
+                if secteur and not '.' in secteur:
+                    company_naf = company.get('activite_principale', '')
+                    if not company_naf.startswith(secteur + '.'):
+                        continue
 
-                    # Filtre région: vérifier le département du SIÈGE
-                    if target_depts:
-                        siege_dept = siege.get('departement', '')
-                        if siege_dept not in target_depts:
-                            continue
+                # Filtre âge entreprise
+                age_min = filtres.get('age_min', 0)
+                if age_min > 0:
+                    age = self._calculate_age(company)
+                    if age < age_min:
+                        continue
 
-                    # Filtre NAF 2 chiffres: section est trop large, post-filtre
-                    if secteur and not '.' in secteur:
-                        company_naf = company.get('activite_principale', '')
-                        if not company_naf.startswith(secteur + '.'):
-                            continue
+                # Filtre âge dirigeant
+                age_dir_min = filtres.get('age_dirigeant_min', 0)
+                age_dir_max = filtres.get('age_dirigeant_max', 0)
+                if age_dir_min > 0 or age_dir_max > 0:
+                    age_dir = self._extract_age_dirigeant(company)
+                    if age_dir is None:
+                        continue  # Age inconnu → exclure si filtre actif
+                    if age_dir_min > 0 and age_dir < age_dir_min:
+                        continue
+                    if age_dir_max > 0 and age_dir > age_dir_max:
+                        continue
 
-                    # Filtre âge entreprise
-                    age_min = filtres.get('age_min', 0)
-                    if age_min > 0:
-                        age = self._calculate_age(company)
-                        if age < age_min:
-                            continue
+                # CA est filtré server-side via params ca_min/ca_max
 
-                    # Filtre âge dirigeant
-                    age_dir_min = filtres.get('age_dirigeant_min', 0)
-                    age_dir_max = filtres.get('age_dirigeant_max', 0)
-                    if age_dir_min > 0 or age_dir_max > 0:
-                        age_dir = self._extract_age_dirigeant(company)
-                        if age_dir is None:
-                            continue  # Age inconnu → exclure si filtre actif
-                        if age_dir_min > 0 and age_dir < age_dir_min:
-                            continue
-                        if age_dir_max > 0 and age_dir > age_dir_max:
-                            continue
+                seen_sirens.add(siren)
+                all_companies.append(company)
+                added += 1
 
-                    # CA est filtré server-side via params ca_min/ca_max
+            self._log(f"  Page {page}: {len(results)} résultats API → +{added} retenus (total: {len(all_companies)})")
 
-                    seen_sirens.add(siren)
-                    all_companies.append(company)
-                    added += 1
-
-                self._log(f"  Page {page}: {len(results)} résultats API → +{added} retenus (total: {len(all_companies)})")
-
-                # Assez de résultats ?
-                if len(all_companies) >= limit:
-                    break
-
-                # Plus de pages ?
-                if len(results) < 25:
-                    break
-
-                page += 1
-                time.sleep(0.15)
-
-            except (requests.exceptions.ConnectionError,
-                    requests.exceptions.Timeout) as e:
-                msg = f"Erreur réseau page {page}: {type(e).__name__}: {e}"
-                self._log(f"  {msg}")
-                if page == 1:
-                    raise RuntimeError(
-                        f"Impossible de joindre l'API data.gouv.fr ({type(e).__name__}). "
-                        "Vérifiez la connexion réseau."
-                    ) from e
+            # Assez de résultats ?
+            if len(all_companies) >= limit:
                 break
-            except Exception as e:
-                msg = f"Erreur page {page}: {type(e).__name__}: {e}"
-                self._log(f"  {msg}")
-                if page == 1:
-                    raise
+
+            # Plus de pages ?
+            if len(results) < 25:
                 break
+
+            page += 1
+            time.sleep(0.3)
 
         all_companies = all_companies[:limit]
         self._log(f"  Params API: {params}")
