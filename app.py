@@ -14,18 +14,14 @@ from streamlit_shadcn_ui import metric_card
 import zipfile
 
 from scraper import DataGouvScraper, TRANCHES_PME
-from scraper_pappers import PappersScraper
 from enricher import SocieteEnricher
 from qualifier import AutoScorer, ProspectQualifier, format_excel_output
 from letter_generator import LetterGenerator
 import config
 
-# Cle API depuis Streamlit Secrets → variables d'environnement
-if hasattr(st, 'secrets'):
-    if 'ANTHROPIC_API_KEY' in st.secrets:
-        os.environ['ANTHROPIC_API_KEY'] = st.secrets['ANTHROPIC_API_KEY']
-    if 'PAPPERS_API_KEY' in st.secrets:
-        os.environ['PAPPERS_API_KEY'] = st.secrets['PAPPERS_API_KEY']
+# Cle API Anthropic depuis Streamlit Secrets → variable d'environnement
+if hasattr(st, 'secrets') and 'ANTHROPIC_API_KEY' in st.secrets:
+    os.environ['ANTHROPIC_API_KEY'] = st.secrets['ANTHROPIC_API_KEY']
 
 st.set_page_config(
     page_title="MiraScrap",
@@ -512,21 +508,44 @@ def run_pipeline(ca_min, ca_max, region_code, secteur_code, forme_code,
     status = st.empty()
 
     try:
-        # 1 - Scraping (Pappers si clé dispo, sinon data.gouv fallback)
-        pappers_key = config.PAPPERS_API_KEY
-        if pappers_key:
-            status.markdown("**Recherche via API Pappers...**")
-            progress.progress(10)
-            scraper = PappersScraper(pappers_key)
-        else:
-            status.markdown("**Recherche sur data.gouv.fr...**")
-            progress.progress(10)
-            scraper = DataGouvScraper()
+        # 0 - Test connectivité API
+        status.markdown("**Test connexion API data.gouv.fr...**")
+        import requests as _req
+        try:
+            _test = _req.get(
+                "https://recherche-entreprises.api.gouv.fr/search",
+                params={"per_page": 1, "etat_administratif": "A",
+                        "tranche_effectif_salarie": "12"},
+                headers={"Accept": "application/json"},
+                timeout=30,
+            )
+            _ct = _test.headers.get('content-type', '')
+            if 'application/json' not in _ct:
+                st.error(
+                    f"L'API data.gouv.fr est bloquée depuis ce serveur. "
+                    f"HTTP {_test.status_code}, Content-Type: {_ct}. "
+                    f"Réponse: {_test.text[:300]}"
+                )
+                return
+            _data = _test.json()
+            if 'erreur' in _data:
+                st.error(f"API erreur: {_data['erreur']}")
+                return
+            _total = _data.get('total_results', 0)
+            st.info(f"API accessible — {_total} entreprises dans la base (status {_test.status_code})")
+        except Exception as _e:
+            st.error(f"Impossible de joindre l'API: {type(_e).__name__}: {_e}")
+            return
 
+        # 1 - Scraping
+        status.markdown("**Recherche sur data.gouv.fr...**")
+        progress.progress(10)
+        scraper = DataGouvScraper()
         companies = scraper.search_companies(filtres)
 
         if not companies:
             st.error("Aucune entreprise trouvee avec ces criteres.")
+            # Diagnostic visible: log du scraper
             if scraper.diagnostics:
                 with st.expander("Diagnostic scraper (cliquer pour voir)"):
                     st.code('\n'.join(scraper.diagnostics))
@@ -537,8 +556,7 @@ def run_pipeline(ca_min, ca_max, region_code, secteur_code, forme_code,
 
         ca_filled = df['ca_euros'].notna().sum()
         age_filled = df['age_dirigeant'].notna().sum()
-        api_name = "Pappers" if pappers_key else "data.gouv"
-        st.success(f"{len(df)} entreprises trouvees via {api_name} (CA: {ca_filled}/{len(df)}, Age dirigeant: {age_filled}/{len(df)})")
+        st.success(f"{len(df)} entreprises trouvees (CA: {ca_filled}/{len(df)}, Age dirigeant: {age_filled}/{len(df)})")
 
         # 2 - Enrichissement API JSON (CA, dirigeant, site web)
         if not skip_enrichment:

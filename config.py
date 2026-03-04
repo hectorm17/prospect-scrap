@@ -104,23 +104,6 @@ def get_anthropic_key():
 
 ANTHROPIC_API_KEY = get_anthropic_key()
 
-
-def get_pappers_key():
-    """Récupère la clé API Pappers: env var > streamlit secrets"""
-    key = os.environ.get('PAPPERS_API_KEY')
-    if key:
-        return key
-    try:
-        import streamlit as st
-        if hasattr(st, 'secrets') and 'PAPPERS_API_KEY' in st.secrets:
-            return st.secrets['PAPPERS_API_KEY']
-    except Exception:
-        pass
-    return ''
-
-
-PAPPERS_API_KEY = get_pappers_key()
-
 # ============================================
 # PARAMÈTRES DE SCRAPING
 # ============================================

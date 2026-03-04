@@ -8,7 +8,6 @@ import sys
 import zipfile
 from datetime import datetime
 from scraper import DataGouvScraper
-from scraper_pappers import PappersScraper
 from enricher import SocieteEnricher
 from qualifier import AutoScorer, ProspectQualifier, format_excel_output
 from letter_generator import LetterGenerator
@@ -33,20 +32,13 @@ def run_pipeline(custom_filtres=None):
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
 
     # ================================================
-    # ETAPE 1 : SCRAPING (Pappers si clé dispo, sinon data.gouv)
+    # ETAPE 1 : SCRAPING DATA.GOUV (CA + dirigeant + age)
     # ================================================
-    pappers_key = config.PAPPERS_API_KEY
-    if pappers_key:
-        print("\n ETAPE 1/5 : Scraping via API Pappers")
-    else:
-        print("\n ETAPE 1/5 : Scraping data.gouv.fr (CA, dirigeants, finances)")
+    print("\n ETAPE 1/5 : Scraping data.gouv.fr (CA, dirigeants, finances)")
     print("-" * 60)
 
     try:
-        if pappers_key:
-            scraper = PappersScraper(pappers_key)
-        else:
-            scraper = DataGouvScraper()
+        scraper = DataGouvScraper()
         companies = scraper.search_companies(filtres)
 
         if not companies:
