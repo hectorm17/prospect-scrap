@@ -508,6 +508,26 @@ def run_pipeline(ca_min, ca_max, region_code, secteur_code, forme_code,
     status = st.empty()
 
     try:
+        # 0 - Test connectivité API
+        status.markdown("**Test connexion API data.gouv.fr...**")
+        import requests as _req
+        try:
+            _test = _req.get(
+                "https://recherche-entreprises.api.gouv.fr/search",
+                params={"per_page": 1, "etat_administratif": "A",
+                        "tranche_effectif_salarie": "12"},
+                timeout=30,
+            )
+            _data = _test.json()
+            if 'erreur' in _data:
+                st.error(f"API erreur: {_data['erreur']}")
+                return
+            _total = _data.get('total_results', 0)
+            st.info(f"API accessible — {_total} entreprises dans la base (status {_test.status_code})")
+        except Exception as _e:
+            st.error(f"Impossible de joindre l'API: {type(_e).__name__}: {_e}")
+            return
+
         # 1 - Scraping
         status.markdown("**Recherche sur data.gouv.fr...**")
         progress.progress(10)
@@ -516,6 +536,10 @@ def run_pipeline(ca_min, ca_max, region_code, secteur_code, forme_code,
 
         if not companies:
             st.error("Aucune entreprise trouvee avec ces criteres.")
+            # Diagnostic visible: log du scraper
+            if scraper.diagnostics:
+                with st.expander("Diagnostic scraper (cliquer pour voir)"):
+                    st.code('\n'.join(scraper.diagnostics))
             return
 
         df = scraper.to_dataframe(companies)

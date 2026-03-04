@@ -10,13 +10,18 @@ IMPORTANT:
 """
 
 import json
+import logging
 import os
 import requests
+from requests.adapters import HTTPAdapter
+from urllib3.util.retry import Retry
 import pandas as pd
 import time
 from datetime import datetime
 from typing import List, Dict, Optional
 import config
+
+logger = logging.getLogger(__name__)
 
 # Mapping tranches effectif INSEE -> description
 TRANCHES_EFFECTIF = {
@@ -95,11 +100,29 @@ class DataGouvScraper:
     BASE_URL = "https://recherche-entreprises.api.gouv.fr/search"
     MAX_PAGES = 400  # API max = 10000/25 = 400 pages
 
+    # Timeout plus long pour Streamlit Cloud (serveurs US → API FR)
+    REQUEST_TIMEOUT = 30
+
     def __init__(self):
         self.session = requests.Session()
         self.session.headers.update({
-            'User-Agent': config.SCRAPING_CONFIG['user_agent']
+            'User-Agent': config.SCRAPING_CONFIG['user_agent'],
+            'Accept': 'application/json',
         })
+        # Retry automatique sur erreurs réseau / 5xx
+        retry = Retry(
+            total=3,
+            backoff_factor=1,
+            status_forcelist=[500, 502, 503, 504, 429],
+            allowed_methods=["GET"],
+        )
+        self.session.mount("https://", HTTPAdapter(max_retries=retry))
+        self.diagnostics = []  # Log visible pour debug Streamlit Cloud
+
+    def _log(self, msg: str):
+        """Log message both to stdout and to diagnostics buffer."""
+        print(msg)
+        self.diagnostics.append(msg)
 
     def search_companies(self, filtres: Dict) -> List[Dict]:
         """
@@ -120,12 +143,13 @@ class DataGouvScraper:
         ca_min = float(filtres.get('ca_min', 0) or 0)
         ca_max = float(filtres.get('ca_max', 0) or 0)
 
-        print(f"\n[Scraper] Recherche data.gouv.fr...")
-        print(f"  Limite cible: {limit}")
+        self.diagnostics = []
+        self._log(f"\n[Scraper] Recherche data.gouv.fr...")
+        self._log(f"  Limite cible: {limit}")
         if ca_min > 0 or ca_max > 0:
-            print(f"  Filtre CA: {ca_min/1e6:.0f}M - {ca_max/1e6:.0f}M (filtre API server-side)")
+            self._log(f"  Filtre CA: {ca_min/1e6:.0f}M - {ca_max/1e6:.0f}M (filtre API server-side)")
         if region_code:
-            print(f"  Region: {config.REGIONS.get(region_code, region_code)} → departements siege: {target_depts}")
+            self._log(f"  Region: {config.REGIONS.get(region_code, region_code)} → departements siege: {target_depts}")
 
         # Construction des paramètres API
         params = {
@@ -137,7 +161,7 @@ class DataGouvScraper:
         tranches = filtres.get('tranches_effectif', TRANCHES_PME)
         if tranches:
             params['tranche_effectif_salarie'] = ','.join(tranches)
-            print(f"  Effectif: {tranches}")
+            self._log(f"  Effectif: {tranches}")
 
         # Secteur NAF - l'API veut le code complet ou la section lettre
         secteur = filtres.get('secteur_naf')
@@ -145,20 +169,20 @@ class DataGouvScraper:
             if '.' in secteur:
                 # Code complet (ex: "62.01Z")
                 params['activite_principale'] = secteur
-                print(f"  NAF: {secteur}")
+                self._log(f"  NAF: {secteur}")
             elif secteur in NAF_TO_SECTION:
                 # Code 2 chiffres → section lettre
                 section = NAF_TO_SECTION[secteur]
                 params['section_activite_principale'] = section
-                print(f"  Section NAF: {secteur} → section {section}")
+                self._log(f"  Section NAF: {secteur} → section {section}")
             else:
-                print(f"  NAF {secteur}: non mappable, ignoré")
+                self._log(f"  NAF {secteur}: non mappable, ignoré")
 
         # Forme juridique
         forme = filtres.get('forme_juridique')
         if forme and forme in FORME_TO_NATURE:
             params['nature_juridique'] = ','.join(FORME_TO_NATURE[forme])
-            print(f"  Forme: {forme} → {FORME_TO_NATURE[forme]}")
+            self._log(f"  Forme: {forme} → {FORME_TO_NATURE[forme]}")
 
         # CA server-side (API filtre et ne retourne que les entreprises avec CA connu)
         if ca_min > 0:
@@ -178,23 +202,28 @@ class DataGouvScraper:
                 response = self.session.get(
                     self.BASE_URL,
                     params=params,
-                    timeout=config.SCRAPING_CONFIG['request_timeout']
+                    timeout=self.REQUEST_TIMEOUT,
                 )
                 response.raise_for_status()
                 data = response.json()
 
+                self._log(f"  Page {page}: HTTP {response.status_code}, URL: {response.url[:200]}")
+
                 if 'erreur' in data:
-                    print(f"  Erreur API: {data['erreur'][:100]}")
+                    msg = f"Erreur API: {data['erreur'][:200]}"
+                    self._log(f"  {msg}")
+                    if page == 1:
+                        raise RuntimeError(msg)
                     break
 
                 results = data.get('results', [])
                 total = data.get('total_results', 0)
 
                 if page == 1:
-                    print(f"  API: {total} résultats totaux")
+                    self._log(f"  API: {total} résultats totaux")
 
                 if not results:
-                    print(f"  Page {page}: aucun résultat, arrêt")
+                    self._log(f"  Page {page}: aucun résultat, arrêt")
                     break
 
                 # Post-filtrage par siège
@@ -243,7 +272,7 @@ class DataGouvScraper:
                     all_companies.append(company)
                     added += 1
 
-                print(f"  Page {page}: {len(results)} résultats API → +{added} retenus (total: {len(all_companies)})")
+                self._log(f"  Page {page}: {len(results)} résultats API → +{added} retenus (total: {len(all_companies)})")
 
                 # Assez de résultats ?
                 if len(all_companies) >= limit:
@@ -256,12 +285,26 @@ class DataGouvScraper:
                 page += 1
                 time.sleep(0.15)
 
+            except (requests.exceptions.ConnectionError,
+                    requests.exceptions.Timeout) as e:
+                msg = f"Erreur réseau page {page}: {type(e).__name__}: {e}"
+                self._log(f"  {msg}")
+                if page == 1:
+                    raise RuntimeError(
+                        f"Impossible de joindre l'API data.gouv.fr ({type(e).__name__}). "
+                        "Vérifiez la connexion réseau."
+                    ) from e
+                break
             except Exception as e:
-                print(f"  Erreur page {page}: {e}")
+                msg = f"Erreur page {page}: {type(e).__name__}: {e}"
+                self._log(f"  {msg}")
+                if page == 1:
+                    raise
                 break
 
         all_companies = all_companies[:limit]
-        print(f"  Total retenu: {len(all_companies)} entreprises uniques")
+        self._log(f"  Params API: {params}")
+        self._log(f"  Total retenu: {len(all_companies)} entreprises uniques")
 
         return all_companies
 
