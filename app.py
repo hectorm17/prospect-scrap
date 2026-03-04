@@ -14,14 +14,18 @@ from streamlit_shadcn_ui import metric_card
 import zipfile
 
 from scraper import DataGouvScraper, TRANCHES_PME
+from scraper_pappers import PappersScraper
 from enricher import SocieteEnricher
 from qualifier import AutoScorer, ProspectQualifier, format_excel_output
 from letter_generator import LetterGenerator
 import config
 
-# Cle API Anthropic depuis Streamlit Secrets → variable d'environnement
-if hasattr(st, 'secrets') and 'ANTHROPIC_API_KEY' in st.secrets:
-    os.environ['ANTHROPIC_API_KEY'] = st.secrets['ANTHROPIC_API_KEY']
+# Cles API depuis Streamlit Secrets → variables d'environnement
+if hasattr(st, 'secrets'):
+    if 'ANTHROPIC_API_KEY' in st.secrets:
+        os.environ['ANTHROPIC_API_KEY'] = st.secrets['ANTHROPIC_API_KEY']
+    if 'PAPPERS_API_KEY' in st.secrets:
+        os.environ['PAPPERS_API_KEY'] = st.secrets['PAPPERS_API_KEY']
 
 st.set_page_config(
     page_title="MiraScrap",
@@ -508,16 +512,35 @@ def run_pipeline(ca_min, ca_max, region_code, secteur_code, forme_code,
     status = st.empty()
 
     try:
-        # 1 - Scraping (le scraper gère les retries et le blocage Cloudflare)
+        # 1 - Scraping : data.gouv d'abord, fallback Pappers si bloqué
         status.markdown("**Recherche sur data.gouv.fr...**")
         progress.progress(10)
-        scraper = DataGouvScraper()
-        companies = scraper.search_companies(filtres)
+
+        companies = None
+        scraper = None
+        api_used = "data.gouv"
+
+        # Tentative data.gouv
+        try:
+            scraper = DataGouvScraper()
+            companies = scraper.search_companies(filtres)
+        except RuntimeError as e:
+            st.warning(f"data.gouv inaccessible : {e}")
+            companies = None
+
+        # Fallback Pappers si data.gouv a échoué ou 0 résultats
+        if not companies and config.PAPPERS_API_KEY:
+            status.markdown("**Fallback : recherche via API Pappers...**")
+            try:
+                scraper = PappersScraper(config.PAPPERS_API_KEY)
+                companies = scraper.search_companies(filtres)
+                api_used = "Pappers"
+            except RuntimeError as e:
+                st.error(f"Pappers aussi en erreur : {e}")
 
         if not companies:
             st.error("Aucune entreprise trouvee avec ces criteres.")
-            # Diagnostic visible: log du scraper
-            if scraper.diagnostics:
+            if scraper and scraper.diagnostics:
                 with st.expander("Diagnostic scraper (cliquer pour voir)"):
                     st.code('\n'.join(scraper.diagnostics))
             return
@@ -527,7 +550,7 @@ def run_pipeline(ca_min, ca_max, region_code, secteur_code, forme_code,
 
         ca_filled = df['ca_euros'].notna().sum()
         age_filled = df['age_dirigeant'].notna().sum()
-        st.success(f"{len(df)} entreprises trouvees (CA: {ca_filled}/{len(df)}, Age dirigeant: {age_filled}/{len(df)})")
+        st.success(f"{len(df)} entreprises trouvees via {api_used} (CA: {ca_filled}/{len(df)}, Age dirigeant: {age_filled}/{len(df)})")
 
         # 2 - Enrichissement API JSON (CA, dirigeant, site web)
         if not skip_enrichment:

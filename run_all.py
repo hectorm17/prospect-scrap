@@ -8,6 +8,7 @@ import sys
 import zipfile
 from datetime import datetime
 from scraper import DataGouvScraper
+from scraper_pappers import PappersScraper
 from enricher import SocieteEnricher
 from qualifier import AutoScorer, ProspectQualifier, format_excel_output
 from letter_generator import LetterGenerator
@@ -32,7 +33,7 @@ def run_pipeline(custom_filtres=None):
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
 
     # ================================================
-    # ETAPE 1 : SCRAPING DATA.GOUV (CA + dirigeant + age)
+    # ETAPE 1 : SCRAPING (data.gouv → fallback Pappers)
     # ================================================
     print("\n ETAPE 1/5 : Scraping data.gouv.fr (CA, dirigeants, finances)")
     print("-" * 60)
@@ -40,11 +41,23 @@ def run_pipeline(custom_filtres=None):
     try:
         scraper = DataGouvScraper()
         companies = scraper.search_companies(filtres)
+    except RuntimeError as e:
+        print(f"\n data.gouv inaccessible: {e}")
+        companies = None
 
-        if not companies:
-            print("\n ERREUR : Aucune entreprise trouvee")
-            return None
+    if not companies and config.PAPPERS_API_KEY:
+        print("\n Fallback Pappers...")
+        try:
+            scraper = PappersScraper(config.PAPPERS_API_KEY)
+            companies = scraper.search_companies(filtres)
+        except RuntimeError as e:
+            print(f"\n Pappers aussi en erreur: {e}")
 
+    if not companies:
+        print("\n ERREUR : Aucune entreprise trouvee")
+        return None
+
+    try:
         df = scraper.to_dataframe(companies)
 
         ca_filled = df['ca_euros'].notna().sum()
