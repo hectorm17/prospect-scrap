@@ -204,10 +204,31 @@ class DataGouvScraper:
                     params=params,
                     timeout=self.REQUEST_TIMEOUT,
                 )
-                response.raise_for_status()
-                data = response.json()
+                self._log(f"  Page {page}: HTTP {response.status_code}, "
+                          f"Content-Type: {response.headers.get('content-type', '?')}")
 
-                self._log(f"  Page {page}: HTTP {response.status_code}, URL: {response.url[:200]}")
+                response.raise_for_status()
+
+                # Vérifier que la réponse est bien du JSON
+                ct = response.headers.get('content-type', '')
+                if 'application/json' not in ct:
+                    body_preview = response.text[:300].replace('\n', ' ')
+                    msg = (f"L'API ne retourne pas du JSON "
+                           f"(Content-Type: {ct}). Réponse: {body_preview}")
+                    self._log(f"  {msg}")
+                    if page == 1:
+                        raise RuntimeError(msg)
+                    break
+
+                try:
+                    data = response.json()
+                except ValueError:
+                    body_preview = response.text[:300].replace('\n', ' ')
+                    msg = f"JSON invalide. Réponse brute: {body_preview}"
+                    self._log(f"  {msg}")
+                    if page == 1:
+                        raise RuntimeError(msg)
+                    break
 
                 if 'erreur' in data:
                     msg = f"Erreur API: {data['erreur'][:200]}"

@@ -516,8 +516,17 @@ def run_pipeline(ca_min, ca_max, region_code, secteur_code, forme_code,
                 "https://recherche-entreprises.api.gouv.fr/search",
                 params={"per_page": 1, "etat_administratif": "A",
                         "tranche_effectif_salarie": "12"},
+                headers={"Accept": "application/json"},
                 timeout=30,
             )
+            _ct = _test.headers.get('content-type', '')
+            if 'application/json' not in _ct:
+                st.error(
+                    f"L'API data.gouv.fr est bloquée depuis ce serveur. "
+                    f"HTTP {_test.status_code}, Content-Type: {_ct}. "
+                    f"Réponse: {_test.text[:300]}"
+                )
+                return
             _data = _test.json()
             if 'erreur' in _data:
                 st.error(f"API erreur: {_data['erreur']}")
