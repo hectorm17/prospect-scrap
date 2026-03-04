@@ -118,7 +118,7 @@ class DataGouvScraper:
         retry = Retry(
             total=3,
             backoff_factor=2,
-            status_forcelist=[500, 502, 503, 504, 429],
+            status_forcelist=[500, 502, 503, 504],
             allowed_methods=["GET"],
         )
         self.session.mount("https://", HTTPAdapter(max_retries=retry))
@@ -204,6 +204,10 @@ class DataGouvScraper:
         while page <= self.MAX_PAGES:
             params['page'] = page
 
+            # Throttle: 2s entre chaque requête pour éviter le 429
+            if page > 1:
+                time.sleep(2)
+
             # Retry par page (Cloudflare peut bloquer puis laisser passer)
             response = None
             data = None
@@ -216,6 +220,16 @@ class DataGouvScraper:
                     )
                     self._log(f"  Page {page} (tentative {attempt}): HTTP {response.status_code}, "
                               f"Content-Type: {response.headers.get('content-type', '?')}")
+
+                    # 429 = rate limit → attendre et réessayer
+                    if response.status_code == 429:
+                        if attempt < max_retries_per_page:
+                            wait = attempt * 5  # 5s, 10s
+                            self._log(f"  Rate limit 429, attente {wait}s...")
+                            time.sleep(wait)
+                            continue
+                        self._log("  Rate limit 429 persistant, arrêt pagination")
+                        break
 
                     response.raise_for_status()
 
