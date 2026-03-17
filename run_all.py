@@ -124,8 +124,7 @@ def run_pipeline(custom_filtres=None):
     letter_api_key = config.ANTHROPIC_API_KEY if config.ANTHROPIC_API_KEY and config.ANTHROPIC_API_KEY != "sk-ant-xxxxx" else ""
     gen = LetterGenerator(output_dir=lettres_dir, api_key=letter_api_key)
 
-    # Generer lettres + extraire texte pour l'Excel
-    letter_texts = []
+    # Generer lettres Word
     letter_files = []
     for _, row in df.iterrows():
         prospect = row.to_dict()
@@ -136,12 +135,8 @@ def run_pipeline(custom_filtres=None):
             with open(filepath, 'wb') as f:
                 f.write(buf.getvalue())
             letter_files.append(filepath)
-            letter_texts.append(LetterGenerator.extract_text_from_buffer(buf))
         except Exception as e:
             print(f"  Erreur lettre pour {prospect.get('nom_entreprise', '?')}: {e}")
-            letter_texts.append('')
-
-    df['lettre'] = letter_texts
     print(f"  {len(letter_files)} lettres generees dans {lettres_dir}/")
 
     # ================================================

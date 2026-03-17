@@ -598,18 +598,15 @@ def run_pipeline(ca_min, ca_max, region_code, secteur_code, forme_code,
             status.markdown("**Generation des lettres de prospection...**")
         gen = LetterGenerator(api_key=letter_api_key)
 
-        letter_texts = []
         letter_buffers = []
         for _, row in df.iterrows():
             prospect = row.to_dict()
             letter_buf = gen.generate_letter(prospect)
             letter_name = gen.generate_filename(prospect)
-            letter_texts.append(LetterGenerator.extract_text_from_buffer(letter_buf))
             letter_buffers.append((letter_name, letter_buf.getvalue()))
-        df['lettre'] = letter_texts
         progress.progress(85)
 
-        # 6 - Export Excel (avec texte des lettres integre)
+        # 6 - Export Excel
         status.markdown("**Generation Excel...**")
         excel_bytes = format_excel_output(df)
         filename = f"prospects_{timestamp}.xlsx"

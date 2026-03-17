@@ -384,8 +384,8 @@ class LetterGenerator:
             except ValueError:
                 pass
 
-        # --- Logo (P0) ---
-        self._replace_logo(doc, site_web)
+        # --- Logo (P0) : supprime le logo placeholder du template ---
+        self._remove_logo(doc)
 
         # --- Date (P2) ---
         self._clear_and_set(doc.paragraphs[2], f"Paris, le {_format_date_fr()}")
@@ -428,21 +428,8 @@ class LetterGenerator:
         else:
             paragraph.add_run(text)
 
-    def _replace_logo(self, doc, site_web):
-        """
-        Remplace image4.png (logo Bonna Sabla) par le logo du prospect.
-        Si pas de logo prospect, supprime le drawing de P0.
-        """
-        logo_bytes = _fetch_best_logo(site_web)
-
-        if logo_bytes:
-            # Methode 1 : remplacer les bytes de image4.png directement
-            for rel_id, rel in doc.part.rels.items():
-                if 'image' in rel.reltype and 'image4' in (rel.target_ref or ''):
-                    rel.target_part._blob = logo_bytes
-                    return
-
-        # Pas de logo ou image4 non trouvee → supprimer le drawing de P0
+    def _remove_logo(self, doc):
+        """Supprime le logo/drawing de P0 (pas de logo prospect dans la lettre)."""
         p0 = doc.paragraphs[0]
         ns_w = 'http://schemas.openxmlformats.org/wordprocessingml/2006/main'
         for run_elem in p0._element.findall(f'{{{ns_w}}}r'):

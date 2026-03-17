@@ -315,9 +315,6 @@ def format_excel_output(df: pd.DataFrame, output_file: str = None) -> bytes:
         return nom
     dirigeant_col = df_export.apply(_format_dirigeant, axis=1)
 
-    # Lettre : texte complet (colonne 'lettre' remplie par le pipeline)
-    lettre_col = df_export['lettre'] if 'lettre' in df_export.columns else ''
-
     # Adresse complete
     if 'adresse_complete' not in df_export.columns:
         df_export['adresse_complete'] = df_export.apply(
@@ -339,7 +336,6 @@ def format_excel_output(df: pd.DataFrame, output_file: str = None) -> bytes:
         'CA': ca_col,
         'Activite': activite_col,
         'Dirigeant Principal': dirigeant_col,
-        'Lettre': lettre_col,
         'Adresse du siege': df_export['adresse_complete'],
         'Ville': df_export['ville'] if 'ville' in df_export.columns else '',
         'Fiche Pappers': siren_col.apply(_pappers_url) if 'siren' in df_export.columns else '',
@@ -394,11 +390,10 @@ def format_excel_output(df: pd.DataFrame, output_file: str = None) -> bytes:
         ws.set_column(1, 1, 15)   # CA
         ws.set_column(2, 2, 40)   # Activite
         ws.set_column(3, 3, 30)   # Dirigeant
-        ws.set_column(4, 4, 80)   # Lettre (large)
-        ws.set_column(5, 5, 50)   # Adresse
-        ws.set_column(6, 6, 20)   # Ville
-        ws.set_column(7, 7, 60)   # Fiche Pappers
-        ws.set_column(8, 8, 60)   # Fiche Annuaire Data.gouv
+        ws.set_column(4, 4, 50)   # Adresse
+        ws.set_column(5, 5, 20)   # Ville
+        ws.set_column(6, 6, 60)   # Fiche Pappers
+        ws.set_column(7, 7, 60)   # Fiche Annuaire Data.gouv
 
         ws.freeze_panes(1, 0)
         ws.autofilter(0, 0, len(df_final), len(df_final.columns) - 1)
