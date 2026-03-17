@@ -6,12 +6,10 @@ Qualification des prospects :
 
 import anthropic
 import pandas as pd
-import requests
 from io import BytesIO
 from typing import Dict
 from tqdm import tqdm
 from datetime import datetime
-from PIL import Image as PILImage
 import time
 import json
 import re
@@ -287,31 +285,38 @@ Réponds UNIQUEMENT en JSON :
 
 
 def format_excel_output(df: pd.DataFrame, output_file: str = None) -> bytes:
-    """Formate le fichier Excel professionnel. Retourne les bytes du fichier."""
+    """Formate le fichier Excel simplifie (9 colonnes). Retourne les bytes du fichier."""
 
     df_export = df.copy()
 
-    # CA en M
-    if 'ca_euros' in df_export.columns:
-        df_export['ca_m'] = df_export['ca_euros'].apply(
-            lambda x: round(x / 1_000_000, 2) if pd.notna(x) and isinstance(x, (int, float)) else None
-        )
+    # Deduplication par SIREN
+    if 'siren' in df_export.columns:
+        before = len(df_export)
+        df_export = df_export.drop_duplicates(subset=['siren'], keep='first')
+        after = len(df_export)
+        if before != after:
+            print(f"[Dedup] {before} -> {after} entreprises ({before - after} doublons supprimes)")
 
-    # Resultat net en M
-    if 'resultat_euros' in df_export.columns:
-        df_export['resultat_m'] = df_export['resultat_euros'].apply(
-            lambda x: round(x / 1_000_000, 2) if pd.notna(x) and isinstance(x, (int, float)) else None
-        )
-
-    # Dirigeant : meilleure source
-    df_export['dirigeant_final'] = df_export.apply(
-        lambda r: r.get('dirigeant_enrichi') or r.get('dirigeant_principal') or '', axis=1
-    )
+    # CA formate (ex: "25.4 M€")
+    def _format_ca(x):
+        if pd.notna(x) and isinstance(x, (int, float)) and x > 0:
+            return f"{x / 1_000_000:.1f} M\u20ac"
+        return ''
+    ca_col = df_export['ca_euros'].apply(_format_ca) if 'ca_euros' in df_export.columns else ''
 
     # Activite : activite_declaree (Societe.com) sinon libelle NAF
-    df_export['activite_final'] = df_export.apply(
+    activite_col = df_export.apply(
         lambda r: r.get('activite_declaree') or r.get('libelle_naf') or '', axis=1
     )
+
+    # Dirigeant : meilleure source + fonction
+    def _format_dirigeant(r):
+        nom = r.get('dirigeant_enrichi') or r.get('dirigeant_principal') or ''
+        return nom
+    dirigeant_col = df_export.apply(_format_dirigeant, axis=1)
+
+    # Lettre : texte complet (colonne 'lettre' remplie par le pipeline)
+    lettre_col = df_export['lettre'] if 'lettre' in df_export.columns else ''
 
     # Adresse complete
     if 'adresse_complete' not in df_export.columns:
@@ -320,51 +325,26 @@ def format_excel_output(df: pd.DataFrame, output_file: str = None) -> bytes:
             axis=1
         )
 
-    # Nom du fichier lettre .docx (correspond a LetterGenerator.generate_filename)
-    df_export['lettre_fichier'] = df_export.apply(
-        lambda r: "lettres/Lettre_{}.docx".format(
-            re.sub(r'\s+', '_', re.sub(r'[^\w\s-]', '', str(r.get('nom_entreprise', 'prospect'))).strip())[:50]
-        ), axis=1
-    )
+    # Liens Pappers et Data.gouv
+    def _pappers_url(siren):
+        return f'https://www.pappers.fr/entreprise/{siren}' if pd.notna(siren) and siren else ''
+    def _datagouv_url(siren):
+        return f'https://annuaire-entreprises.data.gouv.fr/entreprise/{siren}' if pd.notna(siren) and siren else ''
 
-    column_map = [
-        ('score', 'Score'),
-        ('score_label', 'Qualification'),
-        ('nom_entreprise', 'Entreprise'),
-        ('logo_url', 'Logo'),
-        ('ca_m', "Chiffre d'Affaires (M)"),
-        ('evolution_ca', 'Evolution CA'),
-        ('resultat_m', 'Resultat Net (M)'),
-        ('activite_final', "Activite"),
-        ('dirigeant_final', 'Dirigeant Principal'),
-        ('age_dirigeant', 'Age Dirigeant'),
-        ('telephone', 'Telephone'),
-        ('email', 'Email'),
-        ('site_web', 'Site Web'),
-        ('lettre_fichier', 'Lettre'),
-        ('adresse_complete', 'Adresse du Siege'),
-        ('ville', 'Ville'),
-        ('region', 'Region'),
-        ('tranche_effectif', 'Effectif'),
-        ('date_creation', 'Date de Creation'),
-        ('forme_juridique', 'Forme Juridique'),
-        ('siren', 'SIREN'),
-        ('url_pappers', 'Fiche Pappers'),
-        ('url_datagouv', 'Fiche Data.gouv'),
-        ('resume', 'Resume Activite'),
-        ('analyse', 'Analyse M&A'),
-        ('justification', 'Justification Score'),
-    ]
+    siren_col = df_export['siren'] if 'siren' in df_export.columns else ''
 
-    final_cols = []
-    rename = {}
-    for col_key, col_label in column_map:
-        if col_key not in df_export.columns:
-            df_export[col_key] = ''
-        final_cols.append(col_key)
-        rename[col_key] = col_label
-
-    df_final = df_export[final_cols].rename(columns=rename)
+    # Construction du DataFrame final avec 9 colonnes exactes
+    df_final = pd.DataFrame({
+        'Entreprise': df_export['nom_entreprise'] if 'nom_entreprise' in df_export.columns else '',
+        'CA': ca_col,
+        'Activite': activite_col,
+        'Dirigeant Principal': dirigeant_col,
+        'Lettre': lettre_col,
+        'Adresse du siege': df_export['adresse_complete'],
+        'Ville': df_export['ville'] if 'ville' in df_export.columns else '',
+        'Fiche Pappers': siren_col.apply(_pappers_url) if 'siren' in df_export.columns else '',
+        'Fiche Annuaire Data.gouv': siren_col.apply(_datagouv_url) if 'siren' in df_export.columns else '',
+    })
 
     buffer = BytesIO()
     target = output_file if output_file else buffer
@@ -375,13 +355,10 @@ def format_excel_output(df: pd.DataFrame, output_file: str = None) -> bytes:
         wb = writer.book
         ws = writer.sheets['Prospects']
 
+        # Header Mirabaud (bleu marine + blanc)
         header_fmt = wb.add_format({
-            'bold': True, 'bg_color': '#1a1a2e', 'font_color': '#e0e0e0',
+            'bold': True, 'bg_color': '#0a2540', 'font_color': 'white',
             'border': 1, 'text_wrap': True, 'valign': 'vcenter',
-            'font_name': 'Calibri', 'font_size': 10,
-        })
-        money_fmt = wb.add_format({
-            'num_format': '#,##0.00', 'border': 1,
             'font_name': 'Calibri', 'font_size': 10,
         })
         cell_fmt = wb.add_format({
@@ -390,106 +367,38 @@ def format_excel_output(df: pd.DataFrame, output_file: str = None) -> bytes:
         })
         link_fmt = wb.add_format({
             'border': 1, 'font_color': '#0066CC', 'underline': True,
-            'valign': 'vcenter', 'align': 'center',
+            'valign': 'vcenter',
             'font_name': 'Calibri', 'font_size': 10,
         })
-        score_fmts = {
-            'A': wb.add_format({
-                'bold': True, 'bg_color': '#27ae60', 'font_color': 'white',
-                'border': 1, 'align': 'center', 'font_name': 'Calibri', 'font_size': 11,
-            }),
-            'B': wb.add_format({
-                'bold': True, 'bg_color': '#f39c12', 'font_color': 'white',
-                'border': 1, 'align': 'center', 'font_name': 'Calibri', 'font_size': 11,
-            }),
-            'C': wb.add_format({
-                'bold': True, 'bg_color': '#e74c3c', 'font_color': 'white',
-                'border': 1, 'align': 'center', 'font_name': 'Calibri', 'font_size': 11,
-            }),
-            'D': wb.add_format({
-                'bold': True, 'bg_color': '#7f8c8d', 'font_color': 'white',
-                'border': 1, 'align': 'center', 'font_name': 'Calibri', 'font_size': 11,
-            }),
-        }
 
-        # Find logo column and download/resize favicons to 24x24
-        logo_col_idx = None
-        for i, col_name in enumerate(df_final.columns):
-            if col_name == 'Logo':
-                logo_col_idx = i
-                break
-
-        logo_images = {}
-        if logo_col_idx is not None:
-            session = requests.Session()
-            for row_num in range(len(df_final)):
-                url = df_final.iloc[row_num].iloc[logo_col_idx]
-                if url and str(url).startswith('http'):
-                    try:
-                        r = session.get(str(url), timeout=5)
-                        if len(r.content) > 100:
-                            img = PILImage.open(BytesIO(r.content))
-                            img = img.resize((24, 24), PILImage.LANCZOS)
-                            buf = BytesIO()
-                            img.save(buf, format='PNG')
-                            buf.seek(0)
-                            logo_images[row_num] = buf
-                    except Exception:
-                        pass
-
+        # Ecrire headers
         for col_num, value in enumerate(df_final.columns.values):
             ws.write(0, col_num, value, header_fmt)
 
+        # Ecrire donnees
         for row_num in range(len(df_final)):
             row_data = df_final.iloc[row_num]
             for col_num, col_name in enumerate(df_final.columns):
                 val = row_data.iloc[col_num]
-                if col_num == 0:
-                    fmt = score_fmts.get(val, score_fmts['D'])
-                    ws.write(row_num + 1, col_num, val, fmt)
-                elif col_name == 'Logo':
-                    if row_num in logo_images:
-                        ws.write(row_num + 1, col_num, '', cell_fmt)
-                        ws.insert_image(row_num + 1, col_num, 'logo.png', {
-                            'image_data': logo_images[row_num],
-                            'x_offset': 3, 'y_offset': 3,
-                            'object_position': 1,
-                        })
-                        ws.set_row(row_num + 1, 30)
-                    else:
-                        ws.write(row_num + 1, col_num, '', cell_fmt)
-                elif col_name == 'Lettre':
-                    link_path = str(val) if pd.notna(val) and val else ''
-                    if link_path:
-                        ws.write_url(
-                            row_num + 1, col_num,
-                            f"external:{link_path}",
-                            link_fmt,
-                            "Ouvrir la lettre",
-                        )
-                    else:
-                        ws.write(row_num + 1, col_num, '', cell_fmt)
-                elif col_name in ["Chiffre d'Affaires (M)", "Resultat Net (M)"]:
-                    if pd.notna(val) and val != '':
-                        ws.write_number(row_num + 1, col_num, float(val), money_fmt)
+                if col_name in ('Fiche Pappers', 'Fiche Annuaire Data.gouv'):
+                    url = str(val) if pd.notna(val) and val else ''
+                    if url:
+                        ws.write_url(row_num + 1, col_num, url, link_fmt, url)
                     else:
                         ws.write(row_num + 1, col_num, '', cell_fmt)
                 else:
                     ws.write(row_num + 1, col_num, str(val) if pd.notna(val) else '', cell_fmt)
 
-        widths = {
-            'Score': 7, 'Qualification': 30, 'Entreprise': 35, 'Logo': 5,
-            "Chiffre d'Affaires (M)": 18, 'Evolution CA': 22,
-            'Resultat Net (M)': 16, 'Activite': 50,
-            'Dirigeant Principal': 25, 'Age Dirigeant': 12, 'Telephone': 14, 'Email': 25,
-            'Site Web': 25, 'Lettre': 20, 'Adresse du Siege': 35, 'Ville': 15,
-            'Region': 18, 'Effectif': 18, 'Date de Creation': 14,
-            'Forme Juridique': 14, 'SIREN': 12, 'Fiche Pappers': 40,
-            'Fiche Data.gouv': 45, 'Resume Activite': 40, 'Analyse M&A': 40,
-            'Justification Score': 35,
-        }
-        for col_num, col_name in enumerate(df_final.columns):
-            ws.set_column(col_num, col_num, widths.get(col_name, 15))
+        # Largeurs colonnes
+        ws.set_column(0, 0, 35)   # Entreprise
+        ws.set_column(1, 1, 15)   # CA
+        ws.set_column(2, 2, 40)   # Activite
+        ws.set_column(3, 3, 30)   # Dirigeant
+        ws.set_column(4, 4, 80)   # Lettre (large)
+        ws.set_column(5, 5, 50)   # Adresse
+        ws.set_column(6, 6, 20)   # Ville
+        ws.set_column(7, 7, 60)   # Fiche Pappers
+        ws.set_column(8, 8, 60)   # Fiche Annuaire Data.gouv
 
         ws.freeze_panes(1, 0)
         ws.autofilter(0, 0, len(df_final), len(df_final.columns) - 1)

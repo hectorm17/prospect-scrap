@@ -108,26 +108,50 @@ def run_pipeline(custom_filtres=None):
         df = scorer.score_dataframe(df)
 
     # ================================================
-    # ETAPE 4 : EXPORT EXCEL
+    # ETAPE 4 : DEDUPLICATION + GENERATION LETTRES
     # ================================================
-    print("\n ETAPE 4/5 : Export Excel")
+    print("\n ETAPE 4/5 : Deduplication + Generation lettres")
     print("-" * 60)
 
-    file_final = f"outputs/prospects_{timestamp}.xlsx"
-    excel_bytes = format_excel_output(df, file_final)
-
-    # ================================================
-    # ETAPE 5 : GENERATION LETTRES + ZIP
-    # ================================================
-    print("\n ETAPE 5/5 : Generation lettres Word + ZIP")
-    print("-" * 60)
+    # Deduplication par SIREN
+    if 'siren' in df.columns:
+        before = len(df)
+        df = df.drop_duplicates(subset=['siren'], keep='first')
+        if len(df) < before:
+            print(f"  Dedup: {before} -> {len(df)} ({before - len(df)} doublons supprimes)")
 
     lettres_dir = f"outputs/lettres_{timestamp}"
     letter_api_key = config.ANTHROPIC_API_KEY if config.ANTHROPIC_API_KEY and config.ANTHROPIC_API_KEY != "sk-ant-xxxxx" else ""
     gen = LetterGenerator(output_dir=lettres_dir, api_key=letter_api_key)
-    letter_files = gen.generate_all(df)
 
+    # Generer lettres + extraire texte pour l'Excel
+    letter_texts = []
+    letter_files = []
+    for _, row in df.iterrows():
+        prospect = row.to_dict()
+        try:
+            buf = gen.generate_letter(prospect)
+            filename = gen.generate_filename(prospect)
+            filepath = os.path.join(lettres_dir, filename)
+            with open(filepath, 'wb') as f:
+                f.write(buf.getvalue())
+            letter_files.append(filepath)
+            letter_texts.append(gen.generate_letter_text(prospect))
+        except Exception as e:
+            print(f"  Erreur lettre pour {prospect.get('nom_entreprise', '?')}: {e}")
+            letter_texts.append('')
+
+    df['lettre'] = letter_texts
     print(f"  {len(letter_files)} lettres generees dans {lettres_dir}/")
+
+    # ================================================
+    # ETAPE 5 : EXPORT EXCEL + ZIP
+    # ================================================
+    print("\n ETAPE 5/5 : Export Excel + ZIP")
+    print("-" * 60)
+
+    file_final = f"outputs/prospects_{timestamp}.xlsx"
+    excel_bytes = format_excel_output(df, file_final)
 
     # ZIP
     zip_path = f"outputs/MiraScrap_{timestamp}.zip"

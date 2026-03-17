@@ -583,27 +583,44 @@ def run_pipeline(ca_min, ca_max, region_code, secteur_code, forme_code,
             progress.progress(90)
             st.success("Prospects scores automatiquement")
 
-        # 4 - Export Excel
-        status.markdown("**Generation Excel...**")
-        excel_bytes = format_excel_output(df)
-        filename = f"prospects_{timestamp}.xlsx"
-        progress.progress(95)
+        # 4 - Deduplication par SIREN
+        if 'siren' in df.columns:
+            before = len(df)
+            df = df.drop_duplicates(subset=['siren'], keep='first')
+            if len(df) < before:
+                st.info(f"Deduplication : {before} -> {len(df)} entreprises ({before - len(df)} doublons)")
 
-        # 5 - Generation lettres + ZIP
+        # 5 - Generation lettres + texte dans le DataFrame
         letter_api_key = api_key or os.environ.get('ANTHROPIC_API_KEY', '')
         if letter_api_key:
             status.markdown("**Generation des lettres personnalisees (IA)...**")
         else:
             status.markdown("**Generation des lettres de prospection...**")
         gen = LetterGenerator(api_key=letter_api_key)
+
+        letter_texts = []
+        letter_buffers = []
+        for _, row in df.iterrows():
+            prospect = row.to_dict()
+            letter_buf = gen.generate_letter(prospect)
+            letter_name = gen.generate_filename(prospect)
+            letter_texts.append(gen.generate_letter_text(prospect))
+            letter_buffers.append((letter_name, letter_buf.getvalue()))
+        df['lettre'] = letter_texts
+        progress.progress(85)
+
+        # 6 - Export Excel (avec texte des lettres integre)
+        status.markdown("**Generation Excel...**")
+        excel_bytes = format_excel_output(df)
+        filename = f"prospects_{timestamp}.xlsx"
+        progress.progress(95)
+
+        # 7 - ZIP (Excel + lettres Word)
         zip_buffer = BytesIO()
         with zipfile.ZipFile(zip_buffer, 'w', zipfile.ZIP_DEFLATED) as zf:
-            zf.writestr(f"prospects.xlsx", excel_bytes)
-            for _, row in df.iterrows():
-                prospect = row.to_dict()
-                letter_buf = gen.generate_letter(prospect)
-                letter_name = gen.generate_filename(prospect)
-                zf.writestr(f"lettres/{letter_name}", letter_buf.getvalue())
+            zf.writestr("prospects.xlsx", excel_bytes)
+            for letter_name, letter_data in letter_buffers:
+                zf.writestr(f"lettres/{letter_name}", letter_data)
         zip_buffer.seek(0)
         zip_bytes = zip_buffer.getvalue()
         zip_filename = f"MiraScrap_{timestamp}.zip"

@@ -491,6 +491,20 @@ class LetterGenerator:
         safe_nom = re.sub(r'\s+', '_', safe_nom.strip())[:50]
         return f"Lettre_{safe_nom}.docx"
 
+    def generate_letter_text(self, prospect: dict) -> str:
+        """
+        Genere la lettre et retourne son contenu en texte brut.
+        Utile pour inclure le texte dans l'Excel.
+        """
+        buf = self.generate_letter(prospect)
+        doc = Document(buf)
+        lines = []
+        for para in doc.paragraphs:
+            text = para.text.strip()
+            if text:
+                lines.append(text)
+        return '\n'.join(lines)
+
     def generate_all(self, prospects_df) -> list:
         """
         Genere une lettre pour chaque prospect du DataFrame.
