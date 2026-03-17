@@ -491,13 +491,15 @@ class LetterGenerator:
         safe_nom = re.sub(r'\s+', '_', safe_nom.strip())[:50]
         return f"Lettre_{safe_nom}.docx"
 
-    def generate_letter_text(self, prospect: dict) -> str:
+    @staticmethod
+    def extract_text_from_buffer(buf: BytesIO) -> str:
         """
-        Genere la lettre et retourne son contenu en texte brut.
-        Utile pour inclure le texte dans l'Excel.
+        Extrait le texte brut d'un buffer .docx deja genere.
+        Rembobine le buffer avant et apres lecture.
         """
-        buf = self.generate_letter(prospect)
+        buf.seek(0)
         doc = Document(buf)
+        buf.seek(0)
         lines = []
         for para in doc.paragraphs:
             text = para.text.strip()

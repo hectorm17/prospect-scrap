@@ -604,7 +604,7 @@ def run_pipeline(ca_min, ca_max, region_code, secteur_code, forme_code,
             prospect = row.to_dict()
             letter_buf = gen.generate_letter(prospect)
             letter_name = gen.generate_filename(prospect)
-            letter_texts.append(gen.generate_letter_text(prospect))
+            letter_texts.append(LetterGenerator.extract_text_from_buffer(letter_buf))
             letter_buffers.append((letter_name, letter_buf.getvalue()))
         df['lettre'] = letter_texts
         progress.progress(85)

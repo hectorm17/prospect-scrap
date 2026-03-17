@@ -136,7 +136,7 @@ def run_pipeline(custom_filtres=None):
             with open(filepath, 'wb') as f:
                 f.write(buf.getvalue())
             letter_files.append(filepath)
-            letter_texts.append(gen.generate_letter_text(prospect))
+            letter_texts.append(LetterGenerator.extract_text_from_buffer(buf))
         except Exception as e:
             print(f"  Erreur lettre pour {prospect.get('nom_entreprise', '?')}: {e}")
             letter_texts.append('')
