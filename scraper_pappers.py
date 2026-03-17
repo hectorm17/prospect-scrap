@@ -45,16 +45,17 @@ class PappersScraper:
     ]
 
     # Qualités PRIORITAIRES
+    # Gérant/DG d'abord : ce sont les vrais décideurs opérationnels
     _QUALITE_PRIORITE = [
-        'président',
-        "président du conseil d'administration",
+        'gérant',
+        'co-gérant',
+        'directeur général',
+        'directeur général délégué',
         'président-directeur général',
         'pdg',
-        'directeur général',
-        'gérant',
+        'président',
+        "président du conseil d'administration",
         'président de sas',
-        'co-gérant',
-        'directeur général délégué',
         'administrateur',
     ]
 

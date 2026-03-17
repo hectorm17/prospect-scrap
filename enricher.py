@@ -93,16 +93,15 @@ class CompanyEnricher:
                                 trend = "Stable"
                             result['evolution_ca'] = f"{trend} ({evo:+.0f}%)"
 
-                # Dirigeant (premiere personne physique)
-                for d in company.get('dirigeants', []):
-                    if d.get('type_dirigeant') != 'personne physique':
-                        continue
-                    nom_d = d.get('nom', '')
-                    prenoms = d.get('prenoms', '')
-                    qualite = d.get('qualite', '')
+                # Dirigeant (par priorité : gérant > DG > président)
+                pp = self._pick_best_dirigeant(company.get('dirigeants', []))
+                if pp:
+                    nom_d = pp.get('nom', '')
+                    prenoms = pp.get('prenoms', '')
+                    qualite = pp.get('qualite', '')
                     if nom_d:
                         result['dirigeant_enrichi'] = f"{prenoms} {nom_d} ({qualite})".strip()
-                    ddn = d.get('date_de_naissance', '')
+                    ddn = pp.get('date_de_naissance', '')
                     if ddn and len(ddn) >= 4:
                         try:
                             age = datetime.now().year - int(ddn[:4])
@@ -110,7 +109,6 @@ class CompanyEnricher:
                                 result['age_dirigeant'] = age
                         except ValueError:
                             pass
-                    break
 
         except Exception as e:
             print(f"  ! API {siren}: {str(e)[:60]}")
@@ -120,6 +118,43 @@ class CompanyEnricher:
             result['site_web'] = self.find_website(nom, ville)
 
         return result
+
+    # Priorité des fonctions dirigeant (gérant/DG avant président)
+    _QUALITE_PRIORITE = [
+        'gérant', 'co-gérant',
+        'directeur général', 'directeur général délégué',
+        'président-directeur général', 'pdg',
+        'président', "président du conseil d'administration",
+        'président de sas', 'administrateur',
+    ]
+    _QUALITE_EXCLUSIONS = [
+        'commissaire aux comptes', 'commissaire aux comptes suppléant',
+        'commissaire aux comptes titulaire',
+        'membre du conseil de surveillance', 'censeur',
+        'représentant permanent',
+    ]
+
+    def _pick_best_dirigeant(self, dirigeants: list):
+        """Sélectionne le meilleur dirigeant PP par priorité de qualité."""
+        pp_list = [d for d in dirigeants
+                   if (d.get('type_dirigeant') or '').lower() == 'personne physique'
+                   and d.get('prenoms')]
+        if not pp_list:
+            return None
+
+        # Par priorité de qualité
+        for keyword in self._QUALITE_PRIORITE:
+            for d in pp_list:
+                if keyword in (d.get('qualite') or '').lower():
+                    return d
+
+        # Premier PP non exclu
+        for d in pp_list:
+            qualite = (d.get('qualite') or '').lower()
+            if not any(excl in qualite for excl in self._QUALITE_EXCLUSIONS):
+                return d
+
+        return pp_list[0] if pp_list else None
 
     # ================================================================
     # RECHERCHE SITE WEB — 3 methodes en cascade
