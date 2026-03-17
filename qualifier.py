@@ -309,9 +309,12 @@ def format_excel_output(df: pd.DataFrame, output_file: str = None) -> bytes:
         lambda r: r.get('activite_declaree') or r.get('libelle_naf') or '', axis=1
     )
 
-    # Dirigeant : meilleure source + fonction
+    # Dirigeant : meilleure source, toujours avec fonction entre parentheses
     def _format_dirigeant(r):
         nom = r.get('dirigeant_enrichi') or r.get('dirigeant_principal') or ''
+        # S'assurer que la fonction est entre parentheses
+        if nom and '(' not in nom and not nom.startswith('PM:'):
+            nom = f"{nom} (Dirigeant)"
         return nom
     dirigeant_col = df_export.apply(_format_dirigeant, axis=1)
 

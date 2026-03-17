@@ -94,14 +94,14 @@ class CompanyEnricher:
                             result['evolution_ca'] = f"{trend} ({evo:+.0f}%)"
 
                 # Dirigeant (par priorité : gérant > DG > président)
-                pp = self._pick_best_dirigeant(company.get('dirigeants', []))
-                if pp:
-                    nom_d = pp.get('nom', '')
-                    prenoms = pp.get('prenoms', '')
-                    qualite = pp.get('qualite', '')
+                best = self._pick_best_dirigeant(company.get('dirigeants', []))
+                if best:
+                    prenoms = best.get('prenoms', '')
+                    nom_d = best.get('nom') or best.get('denomination', '')
+                    qualite = best.get('qualite', '') or 'Dirigeant'
                     if nom_d:
                         result['dirigeant_enrichi'] = f"{prenoms} {nom_d} ({qualite})".strip()
-                    ddn = pp.get('date_de_naissance', '')
+                    ddn = best.get('date_de_naissance', '')
                     if ddn and len(ddn) >= 4:
                         try:
                             age = datetime.now().year - int(ddn[:4])
@@ -135,26 +135,41 @@ class CompanyEnricher:
     ]
 
     def _pick_best_dirigeant(self, dirigeants: list):
-        """Sélectionne le meilleur dirigeant PP par priorité de qualité."""
-        pp_list = [d for d in dirigeants
-                   if (d.get('type_dirigeant') or '').lower() == 'personne physique'
-                   and d.get('prenoms')]
-        if not pp_list:
+        """Sélectionne le meilleur dirigeant par priorité. Retourne TOUJOURS quelqu'un si possible."""
+        if not dirigeants:
             return None
 
-        # Par priorité de qualité
-        for keyword in self._QUALITE_PRIORITE:
+        # Séparer PP (personnes physiques) et PM
+        pp_list = []
+        pm_list = []
+        for d in dirigeants:
+            type_dir = (d.get('type_dirigeant') or '').lower()
+            if type_dir == 'personne morale' or not d.get('prenoms'):
+                pm_list.append(d)
+            else:
+                pp_list.append(d)
+
+        # 1. Chercher PP par priorité de qualité
+        if pp_list:
+            for keyword in self._QUALITE_PRIORITE:
+                for d in pp_list:
+                    if keyword in (d.get('qualite') or '').lower():
+                        return d
+
+            # 2. Premier PP non exclu
             for d in pp_list:
-                if keyword in (d.get('qualite') or '').lower():
+                qualite = (d.get('qualite') or '').lower()
+                if not any(excl in qualite for excl in self._QUALITE_EXCLUSIONS):
                     return d
 
-        # Premier PP non exclu
-        for d in pp_list:
-            qualite = (d.get('qualite') or '').lower()
-            if not any(excl in qualite for excl in self._QUALITE_EXCLUSIONS):
-                return d
+            # 3. N'importe quel PP (même commissaire, mieux que rien)
+            return pp_list[0]
 
-        return pp_list[0] if pp_list else None
+        # 4. Aucun PP → retourner la première PM (avec nom/qualite)
+        if pm_list:
+            return pm_list[0]
+
+        return None
 
     # ================================================================
     # RECHERCHE SITE WEB — 3 methodes en cascade
