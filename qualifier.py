@@ -311,9 +311,16 @@ def format_excel_output(df: pd.DataFrame, output_file: str = None) -> bytes:
 
     # Dirigeant : meilleure source, toujours avec fonction entre parentheses
     def _format_dirigeant(r):
-        nom = r.get('dirigeant_enrichi') or r.get('dirigeant_principal') or ''
-        # S'assurer que la fonction est entre parentheses
-        if nom and '(' not in nom and not nom.startswith('PM:'):
+        enrichi = r.get('dirigeant_enrichi')
+        principal = r.get('dirigeant_principal')
+        nom = ''
+        if isinstance(enrichi, str) and enrichi.strip():
+            nom = enrichi.strip()
+        elif isinstance(principal, str) and principal.strip():
+            nom = principal.strip()
+        if not nom or nom.startswith('PM:'):
+            return ''
+        if '(' not in nom:
             nom = f"{nom} (Dirigeant)"
         return nom
     dirigeant_col = df_export.apply(_format_dirigeant, axis=1)
