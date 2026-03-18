@@ -10,6 +10,17 @@ import sys
 import argparse
 import zipfile
 from datetime import datetime
+from pathlib import Path
+
+# Charger .env si present (cle API locale)
+_env_path = Path(__file__).parent / '.env'
+if _env_path.exists():
+    for line in _env_path.read_text().splitlines():
+        line = line.strip()
+        if line and not line.startswith('#') and '=' in line:
+            key, val = line.split('=', 1)
+            os.environ.setdefault(key.strip(), val.strip())
+
 from scraper import DataGouvScraper, TRANCHES_PME
 from scraper_pappers import PappersScraper
 from enricher import SocieteEnricher
