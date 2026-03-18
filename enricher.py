@@ -358,12 +358,21 @@ class CompanyEnricher:
             print(f"  Limite: {target_limit} entreprises")
 
         enriched_data = []
+        errors = 0
 
-        for _, row in tqdm(df.iterrows(), total=len(df), desc="Enrichissement"):
+        for idx, (_, row) in enumerate(tqdm(df.iterrows(), total=len(df), desc="Enrichissement")):
             siren = str(row['siren'])
             nom = row.get('nom_entreprise', '')
             ville = row.get('ville', '')
-            api_data = self.enrich(siren, nom, ville)
+
+            try:
+                api_data = self.enrich(siren, nom, ville)
+            except Exception as e:
+                print(f"  ! Enrichissement {siren} ({nom[:30]}): {e}")
+                errors += 1
+                enriched_data.append(row.to_dict())
+                continue
+
             enriched_row = {**row.to_dict()}
 
             # Merge : ne remplace que si la valeur API est non-vide/non-None
@@ -377,6 +386,9 @@ class CompanyEnricher:
 
             enriched_data.append(enriched_row)
             time.sleep(0.2)
+
+        if errors:
+            print(f"  {errors} erreurs d'enrichissement (entreprises conservees sans enrichissement)")
 
         enriched_df = pd.DataFrame(enriched_data)
 

@@ -404,7 +404,7 @@ def search_tab():
         forme = st.selectbox("Forme juridique", forme_options)
         forme_code = None if forme == "Toutes" else forme
     with col2:
-        limit = st.number_input("Nombre d'entreprises", min_value=1, max_value=500, value=20)
+        limit = st.number_input("Nombre d'entreprises", min_value=1, max_value=1000, value=20)
 
     st.markdown("<br><br>", unsafe_allow_html=True)
 
@@ -554,7 +554,8 @@ def run_pipeline(ca_min, ca_max, region_code, secteur_code, forme_code,
 
         # 2 - Enrichissement API JSON (CA, dirigeant, site web)
         if not skip_enrichment:
-            status.markdown("**Enrichissement API + recherche sites web...**")
+            n = len(df)
+            status.markdown(f"**Enrichissement API + recherche sites web ({n} entreprises)...**")
             progress.progress(30)
             enricher = SocieteEnricher()
             df = enricher.enrich_dataframe(df, filter_ca=False)
@@ -599,11 +600,20 @@ def run_pipeline(ca_min, ca_max, region_code, secteur_code, forme_code,
         gen = LetterGenerator(api_key=letter_api_key)
 
         letter_buffers = []
-        for _, row in df.iterrows():
+        total = len(df)
+        for i, (_, row) in enumerate(df.iterrows()):
             prospect = row.to_dict()
-            letter_buf = gen.generate_letter(prospect)
-            letter_name = gen.generate_filename(prospect)
-            letter_buffers.append((letter_name, letter_buf.getvalue()))
+            try:
+                letter_buf = gen.generate_letter(prospect)
+                letter_name = gen.generate_filename(prospect)
+                letter_buffers.append((letter_name, letter_buf.getvalue()))
+            except Exception as e:
+                nom = prospect.get('nom_entreprise', '?')
+                print(f"  Erreur lettre {nom}: {e}")
+            if total > 20:
+                pct = 65 + int(20 * (i + 1) / total)
+                progress.progress(pct)
+                status.markdown(f"**Lettres : {i+1}/{total}...**")
         progress.progress(85)
 
         # 6 - Export Excel
