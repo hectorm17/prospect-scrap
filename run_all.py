@@ -1,13 +1,16 @@
 """
-Script pour executer tout le pipeline en une seule commande
-Usage: python run_all.py
+MiraScrap - Pipeline local complet (sans limite de temps)
+
+Usage interactif :  python run_all.py
+Usage direct :      python run_all.py --limit 500 --ca-min 5 --ca-max 50 --region 11
 """
 
 import os
 import sys
+import argparse
 import zipfile
 from datetime import datetime
-from scraper import DataGouvScraper
+from scraper import DataGouvScraper, TRANCHES_PME
 from scraper_pappers import PappersScraper
 from enricher import SocieteEnricher
 from qualifier import AutoScorer, ProspectQualifier, format_excel_output
@@ -21,7 +24,8 @@ def run_pipeline(custom_filtres=None):
     1. Scraping API data.gouv (CA + dirigeant + age inclus)
     2. Enrichissement API JSON + recherche site web (DDG)
     3. Scoring auto ou IA
-    4. Export Excel
+    4. Deduplication + generation lettres
+    5. Export Excel + ZIP
     """
     filtres = custom_filtres if custom_filtres else config.FILTRES
 
@@ -33,7 +37,7 @@ def run_pipeline(custom_filtres=None):
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
 
     # ================================================
-    # ETAPE 1 : SCRAPING (data.gouv → fallback Pappers)
+    # ETAPE 1 : SCRAPING (data.gouv -> fallback Pappers)
     # ================================================
     print("\n ETAPE 1/5 : Scraping data.gouv.fr (CA, dirigeants, finances)")
     print("-" * 60)
@@ -121,12 +125,13 @@ def run_pipeline(custom_filtres=None):
             print(f"  Dedup: {before} -> {len(df)} ({before - len(df)} doublons supprimes)")
 
     lettres_dir = f"outputs/lettres_{timestamp}"
-    letter_api_key = config.ANTHROPIC_API_KEY if config.ANTHROPIC_API_KEY and config.ANTHROPIC_API_KEY != "sk-ant-xxxxx" else ""
+    letter_api_key = config.ANTHROPIC_API_KEY if has_api_key else ""
     gen = LetterGenerator(output_dir=lettres_dir, api_key=letter_api_key)
 
     # Generer lettres Word
     letter_files = []
-    for _, row in df.iterrows():
+    total = len(df)
+    for i, (_, row) in enumerate(df.iterrows()):
         prospect = row.to_dict()
         try:
             buf = gen.generate_letter(prospect)
@@ -137,6 +142,8 @@ def run_pipeline(custom_filtres=None):
             letter_files.append(filepath)
         except Exception as e:
             print(f"  Erreur lettre pour {prospect.get('nom_entreprise', '?')}: {e}")
+        if total > 50 and (i + 1) % 50 == 0:
+            print(f"  Lettres : {i+1}/{total}...")
     print(f"  {len(letter_files)} lettres generees dans {lettres_dir}/")
 
     # ================================================
@@ -180,15 +187,90 @@ def run_pipeline(custom_filtres=None):
     return file_final
 
 
+def interactive_setup():
+    """Configuration interactive des filtres."""
+    print("\n" + "="*60)
+    print("MIRASCRAP - Configuration")
+    print("="*60)
+
+    # Region
+    print("\nRegions disponibles :")
+    for code, nom in sorted(config.REGIONS.items()):
+        print(f"  {code} = {nom}")
+    region = input("\nCode region (vide = toute la France) : ").strip() or None
+
+    # CA
+    ca_min = input("CA minimum en M euros [5] : ").strip()
+    ca_min = float(ca_min) if ca_min else 5.0
+    ca_max = input("CA maximum en M euros [50] : ").strip()
+    ca_max = float(ca_max) if ca_max else 50.0
+
+    # Secteur
+    print("\nSecteurs disponibles :")
+    for code, nom in sorted(config.SECTEURS_NAF.items()):
+        print(f"  {code} = {nom}")
+    secteur = input("\nCode secteur (vide = tous) : ").strip() or None
+
+    # Forme juridique
+    forme = input("Forme juridique (SAS/SARL/SA, vide = toutes) : ").strip() or None
+
+    # Nombre
+    limit = input("Nombre d'entreprises [500] : ").strip()
+    limit = int(limit) if limit else 500
+
+    filtres = {
+        'tranches_effectif': TRANCHES_PME,
+        'region': region,
+        'secteur_naf': secteur,
+        'forme_juridique': forme,
+        'age_min': 0,
+        'age_dirigeant_min': 0,
+        'age_dirigeant_max': 0,
+        'ca_min': ca_min * 1_000_000,
+        'ca_max': ca_max * 1_000_000,
+        'limit': limit,
+    }
+
+    print(f"\n  Region : {config.REGIONS.get(region, 'Toute la France') if region else 'Toute la France'}")
+    print(f"  CA : {ca_min:.0f}M - {ca_max:.0f}M")
+    print(f"  Secteur : {config.SECTEURS_NAF.get(secteur, 'Tous') if secteur else 'Tous'}")
+    print(f"  Forme : {forme or 'Toutes'}")
+    print(f"  Limite : {limit} entreprises")
+
+    input("\nAppuie sur ENTREE pour lancer (Ctrl+C pour annuler)...\n")
+
+    return filtres
+
+
 def main():
-    print("\n Demarrage du pipeline avec les filtres du config.py")
-    print(f"   CA : {config.FILTRES['ca_min']/1e6:.0f}M - {config.FILTRES['ca_max']/1e6:.0f}M")
-    print(f"   Region : {config.REGIONS.get(config.FILTRES.get('region', ''), 'Toute la France')}")
-    print(f"   Limite : {config.FILTRES.get('limit', 'Aucune')}")
+    parser = argparse.ArgumentParser(description="MiraScrap - Pipeline local")
+    parser.add_argument('--limit', type=int, help='Nombre d\'entreprises')
+    parser.add_argument('--ca-min', type=float, help='CA minimum en M euros')
+    parser.add_argument('--ca-max', type=float, help='CA maximum en M euros')
+    parser.add_argument('--region', type=str, help='Code region INSEE')
+    parser.add_argument('--secteur', type=str, help='Code secteur NAF')
+    parser.add_argument('--forme', type=str, help='Forme juridique (SAS/SARL/SA)')
+    args = parser.parse_args()
 
-    input("\nAppuie sur ENTREE pour continuer (ou Ctrl+C pour annuler)...\n")
+    # Mode CLI direct si des arguments sont passes
+    if any(v is not None for v in [args.limit, args.ca_min, args.ca_max, args.region]):
+        filtres = {
+            'tranches_effectif': TRANCHES_PME,
+            'region': args.region,
+            'secteur_naf': args.secteur,
+            'forme_juridique': args.forme,
+            'age_min': 0,
+            'age_dirigeant_min': 0,
+            'age_dirigeant_max': 0,
+            'ca_min': (args.ca_min or 5) * 1_000_000,
+            'ca_max': (args.ca_max or 50) * 1_000_000,
+            'limit': args.limit or 500,
+        }
+    else:
+        # Mode interactif
+        filtres = interactive_setup()
 
-    result = run_pipeline()
+    result = run_pipeline(filtres)
 
     if result:
         print(f"Succes ! Fichier : {result}")
